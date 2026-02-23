@@ -136,6 +136,51 @@ fn test_parse_mixed_typed_and_bare() {
     assert_eq!(result.unwrap().len(), 4);
 }
 
+#[test]
+fn test_parse_option_none_from_null() {
+    let parser = create_parser();
+    let result = parser.parse_args_string(r#"[{"type": "option", "value": null}]"#);
+    assert!(
+        result.is_ok(),
+        "Failed to parse option none: {:?}",
+        result.err()
+    );
+    assert_eq!(result.unwrap().len(), 1);
+}
+
+#[test]
+fn test_parse_option_some_from_non_null() {
+    let parser = create_parser();
+    let result = parser.parse_args_string(r#"[{"type": "option", "value": 42}]"#);
+    assert!(
+        result.is_ok(),
+        "Failed to parse option some: {:?}",
+        result.err()
+    );
+    assert_eq!(result.unwrap().len(), 1);
+}
+
+#[test]
+fn test_parse_tuple_fixed_length_array() {
+    let parser = create_parser();
+    let result =
+        parser.parse_args_string(r#"[{"type": "tuple", "arity": 2, "value": [1, "hello"]}]"#);
+    assert!(result.is_ok(), "Failed to parse tuple: {:?}", result.err());
+    assert_eq!(result.unwrap().len(), 1);
+}
+
+#[test]
+fn test_parse_tuple_wrong_arity_gives_clear_error() {
+    let parser = create_parser();
+    let result = parser.parse_args_string(r#"[{"type": "tuple", "arity": 2, "value": [1, 2, 3]}]"#);
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("Tuple arity mismatch: expected 2, got 3"),
+        "unexpected error: {err}"
+    );
+}
+
 // ── Error handling ───────────────────────────────────────────────────
 
 #[test]

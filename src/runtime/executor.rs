@@ -4,6 +4,7 @@ use crate::{runtime::mocking::MockCallLogEntry, runtime::mocking::MockContractDi
 use crate::{DebuggerError, Result};
 
 use indicatif::{ProgressBar, ProgressStyle};
+use serde_json::{json, Value};
 use soroban_env_host::xdr::ScVal;
 use soroban_env_host::{DiagnosticLevel, Host, TryFromVal};
 use soroban_sdk::testutils::Address as _;
@@ -161,7 +162,7 @@ impl ContractExecutor {
         let func_symbol = Symbol::new(&self.env, function);
 
         let parsed_args = if let Some(args_json) = args {
-            match self.parse_args(args_json) {
+            match self.parse_args(function, args_json) {
                 Ok(args) => args,
                 Err(e) => {
                     spinner.finish_and_clear();
@@ -421,12 +422,51 @@ impl ContractExecutor {
             .collect())
     }
 
-    fn parse_args(&self, args_json: &str) -> Result<Vec<Val>> {
+    fn parse_args(&self, function: &str, args_json: &str) -> Result<Vec<Val>> {
+        let normalized_args_json = self
+            .normalize_args_for_function_signature(function, args_json)
+            .unwrap_or_else(|| args_json.to_string());
+
         let parser = ArgumentParser::new(self.env.clone());
-        parser.parse_args_string(args_json).map_err(|e| {
-            warn!("Failed to parse arguments: {}", e);
-            DebuggerError::InvalidArguments(e.to_string()).into()
-        })
+        parser
+            .parse_args_string(&normalized_args_json)
+            .map_err(|e| {
+                warn!("Failed to parse arguments: {}", e);
+                DebuggerError::InvalidArguments(e.to_string()).into()
+            })
+    }
+
+    fn normalize_args_for_function_signature(
+        &self,
+        function: &str,
+        args_json: &str,
+    ) -> Option<String> {
+        let signatures = crate::utils::wasm::parse_function_signatures(&self.wasm_bytes).ok()?;
+        let signature = signatures.into_iter().find(|s| s.name == function)?;
+
+        let Value::Array(mut args) = serde_json::from_str::<Value>(args_json).ok()? else {
+            return None;
+        };
+
+        for (idx, arg) in args.iter_mut().enumerate() {
+            let Some(param) = signature.params.get(idx) else {
+                break;
+            };
+
+            if param.type_name.starts_with("Option<") {
+                let original = arg.clone();
+                *arg = json!({ "type": "option", "value": original });
+                continue;
+            }
+
+            if param.type_name.starts_with("Tuple<") {
+                let original = arg.clone();
+                let arity = tuple_arity_from_type_name(&param.type_name)?;
+                *arg = json!({ "type": "tuple", "arity": arity, "value": original });
+            }
+        }
+
+        serde_json::to_string(&args).ok()
     }
 
     fn install_mock_dispatchers(&self) -> Result<()> {
@@ -469,5 +509,52 @@ impl ContractExecutor {
             ))
             .into()),
         }
+    }
+}
+
+fn tuple_arity_from_type_name(type_name: &str) -> Option<usize> {
+    if !type_name.starts_with("Tuple<") || !type_name.ends_with('>') {
+        return None;
+    }
+
+    let inner = &type_name[6..type_name.len() - 1];
+    if inner.trim().is_empty() {
+        return Some(0);
+    }
+
+    let mut depth = 0usize;
+    let mut arity = 1usize;
+    for ch in inner.chars() {
+        match ch {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => arity += 1,
+            _ => {}
+        }
+    }
+
+    Some(arity)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tuple_arity_from_type_name;
+
+    #[test]
+    fn parses_tuple_arity_for_simple_tuple() {
+        assert_eq!(tuple_arity_from_type_name("Tuple<U32, Symbol>"), Some(2));
+    }
+
+    #[test]
+    fn parses_tuple_arity_for_nested_tuple_types() {
+        assert_eq!(
+            tuple_arity_from_type_name("Tuple<Option<U32>, Tuple<I32, Symbol>, Vec<Bool>>"),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn rejects_non_tuple_type_name() {
+        assert_eq!(tuple_arity_from_type_name("Option<U32>"), None);
     }
 }
