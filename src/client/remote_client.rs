@@ -118,6 +118,7 @@ impl RemoteClient {
                 paused,
                 current_function,
                 step_count,
+                ..
             } => Ok((paused, current_function, step_count)),
             DebugResponse::Error { message } => Err(DebuggerError::ExecutionError(message).into()),
             _ => {
@@ -135,6 +136,7 @@ impl RemoteClient {
                 paused,
                 current_function,
                 step_count,
+                ..
             } => Ok((paused, current_function, step_count)),
             DebugResponse::Error { message } => Err(DebuggerError::ExecutionError(message).into()),
             _ => {
@@ -152,6 +154,7 @@ impl RemoteClient {
                 paused,
                 current_function,
                 step_count,
+                ..
             } => Ok((paused, current_function, step_count)),
             DebugResponse::Error { message } => Err(DebuggerError::ExecutionError(message).into()),
             _ => {

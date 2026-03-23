@@ -49,7 +49,7 @@ pub enum ArgumentParseError {
     ConversionError(String),
 
     #[error("JSON parsing error: {0}")]
-    JsonError(String),
+    JsonError(#[from] serde_json::Error),
 
     #[error("Empty arguments")]
     EmptyArguments,
@@ -66,11 +66,6 @@ pub enum ArgumentParseError {
     },
 }
 
-impl From<serde_json::Error> for ArgumentParseError {
-    fn from(err: serde_json::Error) -> Self {
-        ArgumentParseError::JsonError(err.to_string())
-    }
-}
 
 /// Argument parser for converting JSON to Soroban values
 pub struct ArgumentParser {

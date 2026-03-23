@@ -6,49 +6,32 @@ use std::any::Any;
 pub type PluginResult<T> = Result<T, PluginError>;
 
 /// Errors that can occur during plugin operations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum PluginError {
     /// Plugin initialization failed
+    #[error("Plugin initialization failed: {0}")]
     InitializationFailed(String),
 
     /// Plugin execution failed
+    #[error("Plugin execution failed: {0}")]
     ExecutionFailed(String),
 
     /// Plugin not found
+    #[error("Plugin not found: {0}")]
     NotFound(String),
 
     /// Invalid plugin
+    #[error("Invalid plugin: {0}")]
     Invalid(String),
 
     /// Version mismatch
+    #[error("Version mismatch: required {required}, found {found}")]
     VersionMismatch { required: String, found: String },
 
     /// Dependency error
+    #[error("Dependency error: {0}")]
     DependencyError(String),
 }
-
-impl std::fmt::Display for PluginError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PluginError::InitializationFailed(msg) => {
-                write!(f, "Plugin initialization failed: {}", msg)
-            }
-            PluginError::ExecutionFailed(msg) => write!(f, "Plugin execution failed: {}", msg),
-            PluginError::NotFound(msg) => write!(f, "Plugin not found: {}", msg),
-            PluginError::Invalid(msg) => write!(f, "Invalid plugin: {}", msg),
-            PluginError::VersionMismatch { required, found } => {
-                write!(
-                    f,
-                    "Version mismatch: required {}, found {}",
-                    required, found
-                )
-            }
-            PluginError::DependencyError(msg) => write!(f, "Dependency error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for PluginError {}
 
 /// Custom CLI command that a plugin can provide
 #[derive(Debug, Clone)]

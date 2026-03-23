@@ -184,6 +184,7 @@ impl DebugServer {
                             error: None,
                             paused: true,
                             completed: false,
+                            source_location: None,
                         }
                     }
                     Some(engine) => {
@@ -196,6 +197,7 @@ impl DebugServer {
                                     error: None,
                                     paused: engine.is_paused(),
                                     completed: true,
+                                    source_location: None,
                                 }
                             }
                             Err(e) => {
@@ -206,6 +208,7 @@ impl DebugServer {
                                     error: Some(e.to_string()),
                                     paused: false,
                                     completed: true,
+                                    source_location: None,
                                 }
                             }
                         }
@@ -231,6 +234,7 @@ impl DebugServer {
                                 paused: engine.is_paused(),
                                 current_function,
                                 step_count,
+                                source_location: None,
                             }
                         }
                         Err(e) => DebugResponse::Error {
@@ -258,6 +262,7 @@ impl DebugServer {
                                 paused: engine.is_paused(),
                                 current_function,
                                 step_count,
+                                source_location: None,
                             }
                         }
                         Err(e) => DebugResponse::Error {
@@ -285,6 +290,7 @@ impl DebugServer {
                                 paused: engine.is_paused(),
                                 current_function,
                                 step_count,
+                                source_location: None,
                             }
                         }
                         Err(e) => DebugResponse::Error {
@@ -307,12 +313,14 @@ impl DebugServer {
                                     output: Some(output),
                                     error: None,
                                     paused: false,
+                                    source_location: None,
                                 },
                                 Err(e) => DebugResponse::ContinueResult {
                                     completed: false,
                                     output: None,
                                     error: Some(e.to_string()),
                                     paused: false,
+                                    source_location: None,
                                 },
                             }
                         } else {
@@ -322,12 +330,14 @@ impl DebugServer {
                                     output: None,
                                     error: None,
                                     paused: engine.is_paused(),
+                                    source_location: None,
                                 },
                                 Err(e) => DebugResponse::ContinueResult {
                                     completed: false,
                                     output: None,
                                     error: Some(e.to_string()),
                                     paused: engine.is_paused(),
+                                    source_location: None,
                                 },
                             }
                         }
@@ -358,6 +368,7 @@ impl DebugServer {
                                 step_count: state.step_count() as u64,
                                 paused: engine.is_paused(),
                                 call_stack,
+                                source_location: None,
                             }
                         }
                         Err(e) => DebugResponse::Error {
