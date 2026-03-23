@@ -50,10 +50,12 @@ pub fn run_scenario(args: ScenarioArgs, _verbosity: Verbosity) -> Result<()> {
     let mut executor = ContractExecutor::new(wasm_file.bytes)?;
 
     if let Some(storage_json) = &args.storage {
-        let storage: HashMap<String, String> = serde_json::from_str(storage_json).map_err(|e| {
+        // Validate JSON early for clear errors, then pass through to the executor
+        // which supports the richer `--storage` formats.
+        serde_json::from_str::<serde_json::Value>(storage_json).map_err(|e| {
             DebuggerError::StorageError(format!("Failed to parse initial storage JSON: {}", e))
         })?;
-        executor.set_initial_storage(serde_json::to_string(&storage).unwrap())?;
+        executor.set_initial_storage(storage_json.clone())?;
     }
 
     println!(

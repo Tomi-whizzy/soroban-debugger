@@ -10,6 +10,7 @@
 
 use crate::inspector::budget::MemorySummary;
 use crate::runtime::mocking::{MockCallLogEntry, MockContractDispatcher, MockRegistry};
+use crate::utils::arguments::ArgumentParser;
 use crate::{DebuggerError, Result};
 
 use soroban_env_host::Host;
@@ -125,8 +126,183 @@ impl ContractExecutor {
     pub fn last_memory_summary(&self) -> Option<&MemorySummary> {
         self.last_memory_summary.as_ref()
     }
-    pub fn set_initial_storage(&mut self, _storage_json: String) -> Result<()> {
-        info!("Setting initial storage (not yet implemented)");
+
+    pub fn set_initial_storage(&mut self, storage_json: String) -> Result<()> {
+        #[derive(Debug, Clone, Copy)]
+        enum Durability {
+            Instance,
+            Persistent,
+            Temporary,
+        }
+
+        fn is_typed_annotation(value: &serde_json::Value) -> bool {
+            matches!(
+                value,
+                serde_json::Value::Object(obj) if obj.get("type").is_some() && obj.get("value").is_some()
+            )
+        }
+
+        fn normalize_numbers(value: &serde_json::Value) -> Result<serde_json::Value> {
+            use serde_json::Value;
+
+            if is_typed_annotation(value) {
+                return Ok(value.clone());
+            }
+
+            match value {
+                Value::Null | Value::Bool(_) | Value::String(_) => Ok(value.clone()),
+                Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        Ok(serde_json::json!({ "type": "i64", "value": i }))
+                    } else if let Some(u) = n.as_u64() {
+                        if u <= i64::MAX as u64 {
+                            Ok(serde_json::json!({ "type": "i64", "value": u as i64 }))
+                        } else {
+                            Ok(serde_json::json!({ "type": "u64", "value": u }))
+                        }
+                    } else {
+                        Err(DebuggerError::StorageError(
+                            "Floating-point numbers are not supported in --storage".to_string(),
+                        )
+                        .into())
+                    }
+                }
+                Value::Array(arr) => {
+                    let mut out = Vec::with_capacity(arr.len());
+                    for item in arr {
+                        out.push(normalize_numbers(item)?);
+                    }
+                    Ok(Value::Array(out))
+                }
+                Value::Object(map) => {
+                    let mut out = serde_json::Map::new();
+                    for (k, v) in map {
+                        out.insert(k.clone(), normalize_numbers(v)?);
+                    }
+                    Ok(Value::Object(out))
+                }
+            }
+        }
+
+        fn parse_one_val(env: &Env, value: &serde_json::Value) -> Result<soroban_sdk::Val> {
+            let parser = ArgumentParser::new(env.clone());
+            let json = serde_json::to_string(value).map_err(|e| {
+                DebuggerError::StorageError(format!("Failed to serialize storage JSON value: {e}"))
+            })?;
+            let mut vals = parser.parse_args_string(&json).map_err(|e| {
+                DebuggerError::StorageError(format!("Failed to parse storage value: {e}"))
+            })?;
+            if vals.len() != 1 {
+                return Err(DebuggerError::StorageError(format!(
+                    "Storage entry must resolve to exactly 1 value, got {}",
+                    vals.len()
+                ))
+                .into());
+            }
+            Ok(vals.remove(0))
+        }
+
+        fn parse_durability(raw: Option<&serde_json::Value>) -> Result<Durability> {
+            let Some(v) = raw else {
+                return Ok(Durability::Instance);
+            };
+            let Some(s) = v.as_str() else {
+                return Err(DebuggerError::StorageError(
+                    "durability must be a string: instance|persistent|temporary".to_string(),
+                )
+                .into());
+            };
+            match s {
+                "instance" => Ok(Durability::Instance),
+                "persistent" => Ok(Durability::Persistent),
+                "temporary" => Ok(Durability::Temporary),
+                other => Err(DebuggerError::StorageError(format!(
+                    "Unsupported durability '{other}'. Use instance|persistent|temporary."
+                ))
+                .into()),
+            }
+        }
+
+        info!("Setting initial storage");
+        let root: serde_json::Value = serde_json::from_str(&storage_json).map_err(|e| {
+            DebuggerError::StorageError(format!("Failed to parse initial storage JSON: {e}"))
+        })?;
+
+        let mut entries: Vec<(Durability, soroban_sdk::Val, soroban_sdk::Val)> = Vec::new();
+
+        match root {
+            serde_json::Value::Object(map) => {
+                if let Some(entries_field) = map.get("entries") {
+                    if entries_field.is_object() {
+                        return Err(DebuggerError::StorageError(
+                            "Unsupported --storage format: looks like an exported snapshot. Use a plain object mapping keys to values, e.g. {\"c\": 41}, or use the list form [{\"key\":...,\"value\":...}].".to_string(),
+                        )
+                        .into());
+                    }
+                }
+
+                for (k, v) in map {
+                    let key_json = serde_json::json!({ "type": "symbol", "value": k });
+                    let key_val = parse_one_val(&self.env, &key_json)?;
+                    let value_json = normalize_numbers(&v)?;
+                    let value_val = parse_one_val(&self.env, &value_json)?;
+                    entries.push((Durability::Instance, key_val, value_val));
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                for item in arr {
+                    let serde_json::Value::Object(obj) = item else {
+                        return Err(DebuggerError::StorageError(
+                            "Storage list entries must be objects with {key,value[,durability]}"
+                                .to_string(),
+                        )
+                        .into());
+                    };
+                    let durability = parse_durability(obj.get("durability"))?;
+                    let Some(key) = obj.get("key") else {
+                        return Err(DebuggerError::StorageError(
+                            "Storage entry is missing required field 'key'".to_string(),
+                        )
+                        .into());
+                    };
+                    let Some(value) = obj.get("value") else {
+                        return Err(DebuggerError::StorageError(
+                            "Storage entry is missing required field 'value'".to_string(),
+                        )
+                        .into());
+                    };
+
+                    let key_val = parse_one_val(&self.env, key)?;
+                    let value_json = normalize_numbers(value)?;
+                    let value_val = parse_one_val(&self.env, &value_json)?;
+                    entries.push((durability, key_val, value_val));
+                }
+            }
+            other => {
+                return Err(DebuggerError::StorageError(format!(
+                    "Unsupported --storage JSON: expected object or array, got {other}"
+                ))
+                .into())
+            }
+        }
+
+        let contract_address = self.contract_address.clone();
+        self.env.as_contract(&contract_address, || {
+            for (durability, key_val, value_val) in entries {
+                match durability {
+                    Durability::Instance => {
+                        self.env.storage().instance().set(&key_val, &value_val);
+                    }
+                    Durability::Persistent => {
+                        self.env.storage().persistent().set(&key_val, &value_val);
+                    }
+                    Durability::Temporary => {
+                        self.env.storage().temporary().set(&key_val, &value_val);
+                    }
+                }
+            }
+        });
+
         Ok(())
     }
     pub fn set_mock_specs(&mut self, specs: &[String]) -> Result<()> {
