@@ -360,6 +360,20 @@ impl StorageInspector {
         crate::logging::log_display("", crate::logging::LogLevel::Info);
     }
 
+    /// Sync access tracking from DebugEnv
+    pub fn sync_from_debug_env(&mut self, debug_env: &crate::runtime::env::DebugEnv) {
+        for access in debug_env.storage_accesses() {
+            match &access.access_type {
+                crate::runtime::env::StorageAccessType::Read => {
+                    self.track_read(&access.key);
+                }
+                crate::runtime::env::StorageAccessType::Write => {
+                    self.track_write(&access.key);
+                }
+            }
+        }
+    }
+
     /// Capture a snapshot of all storage entries from the host
     pub fn capture_snapshot(host: &Host) -> HashMap<String, String> {
         match host.with_mut_storage(|storage| {

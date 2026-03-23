@@ -3,6 +3,23 @@ use crate::inspector::stack::CallFrame;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Function call metadata embedded in timeline snapshots
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionCallSnapshot {
+    /// Caller address or identifier
+    pub caller: String,
+    /// Callee function name
+    pub callee: String,
+    /// Function arguments as strings
+    pub arguments: Vec<String>,
+    /// Call depth in the call stack
+    pub depth: usize,
+    /// Function result if available
+    pub result: Option<String>,
+    /// Function error if any
+    pub error: Option<String>,
+}
+
 /// A snapshot of the execution state at a specific point in time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionSnapshot {
@@ -22,6 +39,8 @@ pub struct ExecutionSnapshot {
     pub events_count: usize,
     /// Timestamp of the snapshot
     pub timestamp: u128,
+    /// Function call metadata if captured at this step
+    pub function_call: Option<FunctionCallSnapshot>,
 }
 
 /// Manages the timeline of execution snapshots for time-travel debugging.

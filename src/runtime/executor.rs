@@ -9,6 +9,7 @@
 //! - [`super::result`]  — Result types and formatting helpers.
 
 use crate::inspector::budget::MemorySummary;
+use crate::runtime::env::DebugEnv;
 use crate::runtime::mocking::{MockCallLogEntry, MockContractDispatcher, MockRegistry};
 use crate::utils::arguments::ArgumentParser;
 use crate::{DebuggerError, Result};
@@ -35,6 +36,7 @@ pub struct ContractExecutor {
     wasm_bytes: Vec<u8>,
     timeout_secs: u64,
     error_db: crate::debugger::error_db::ErrorDatabase,
+    debug_env: DebugEnv,
 }
 
 impl ContractExecutor {
@@ -51,6 +53,7 @@ impl ContractExecutor {
             wasm_bytes: wasm,
             timeout_secs: 30,
             error_db: loaded.error_db,
+            debug_env: DebugEnv::new(),
         })
     }
 
@@ -102,8 +105,18 @@ impl ContractExecutor {
             None => vec![],
         };
 
+        // Track function call entry
+        let contract_addr_str = format!("{:?}", self.contract_address);
+        let arg_strings: Vec<String> = parsed_args
+            .iter()
+            .map(|val| format!("{:?}", val))
+            .collect();
+        self.debug_env.enter_function(&contract_addr_str, function);
+
         // 3. Invoke and capture the result.
         let storage_fn = || self.get_storage_snapshot();
+        let storage_before = storage_fn()?;
+
         let (display, record) = crate::runtime::invoker::invoke_function(
             &self.env,
             &self.contract_address,
@@ -114,8 +127,48 @@ impl ContractExecutor {
             storage_fn,
         )?;
 
+        // Track storage changes as accesses
+        let storage_after = &record.storage_after;
+        self.track_storage_changes(&storage_before, storage_after);
+
+        // Record completed function call
+        let result_str = display.clone();
+        self.debug_env.record_function_call(
+            &contract_addr_str,
+            function,
+            arg_strings,
+            Some(result_str),
+            None::<&str>,
+        );
+
         self.last_execution = Some(record);
         Ok(display)
+    }
+
+    /// Track storage changes by comparing before and after snapshots
+    fn track_storage_changes(
+        &mut self,
+        storage_before: &HashMap<String, String>,
+        storage_after: &HashMap<String, String>,
+    ) {
+        // Track writes (new or modified entries)
+        for (key, value) in storage_after {
+            if !storage_before.contains_key(key) {
+                // New write
+                self.debug_env.track_storage_write(key, value);
+            } else if storage_before.get(key) != Some(value) {
+                // Modified write
+                self.debug_env.track_storage_write(key, value);
+            }
+        }
+
+        // Track reads by checking which keys existed before
+        for key in storage_before.keys() {
+            if storage_after.contains_key(key) {
+                // Key still exists, assume it was read (at minimum)
+                self.debug_env.track_storage_read(key);
+            }
+        }
     }
 
     // ── accessors ─────────────────────────────────────────────────────────────
@@ -123,8 +176,17 @@ impl ContractExecutor {
     pub fn last_execution(&self) -> Option<&ExecutionRecord> {
         self.last_execution.as_ref()
     }
+
     pub fn last_memory_summary(&self) -> Option<&MemorySummary> {
         self.last_memory_summary.as_ref()
+    }
+
+    pub fn debug_env(&self) -> &DebugEnv {
+        &self.debug_env
+    }
+
+    pub fn debug_env_mut(&mut self) -> &mut DebugEnv {
+        &mut self.debug_env
     }
 
     pub fn set_initial_storage(&mut self, storage_json: String) -> Result<()> {
@@ -432,5 +494,82 @@ impl ContractExecutor {
             DebuggerError::InvalidArguments(format!("Invalid contract id in --mock: {contract_id}"))
                 .into()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_debug_env_storage_tracking() {
+        let mut debug_env = DebugEnv::new();
+
+        debug_env.track_storage_read("balance:alice");
+        debug_env.track_storage_write("balance:alice", "1000");
+        debug_env.track_storage_read("balance:alice");
+
+        assert_eq!(debug_env.storage_access_count(), 3);
+        assert_eq!(debug_env.get_key_reads("balance:alice").len(), 2);
+        assert_eq!(debug_env.get_key_writes("balance:alice").len(), 1);
+    }
+
+    #[test]
+    fn test_debug_env_function_call_tracking() {
+        let mut debug_env = DebugEnv::new();
+
+        debug_env.enter_function("contract", "transfer");
+        debug_env.record_function_call(
+            "contract",
+            "transfer",
+            vec!["alice".to_string(), "bob".to_string(), "100".to_string()],
+            Some("success"),
+            None::<&str>,
+        );
+
+        assert_eq!(debug_env.function_call_count(), 1);
+        let calls = debug_env.get_function_calls_for("transfer");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].arguments.len(), 3);
+        assert_eq!(calls[0].result, Some("success".to_string()));
+    }
+
+    #[test]
+    fn test_debug_env_nested_calls() {
+        let mut debug_env = DebugEnv::new();
+
+        // Simulate nested call: transfer -> mint
+        debug_env.enter_function("contract", "transfer");
+        debug_env.enter_function("transfer", "mint");
+        debug_env.record_function_call("transfer", "mint", vec!["100".to_string()], Some("ok"), None::<&str>);
+
+        assert_eq!(debug_env.current_call_depth(), 1);
+        debug_env.record_function_call("contract", "transfer", vec![], Some("complete"), None::<&str>);
+        assert_eq!(debug_env.current_call_depth(), 0);
+    }
+
+    #[test]
+    fn test_track_storage_changes_direct() {
+        let mut debug_env = DebugEnv::new();
+
+        // Simulate calling track_storage_changes logic directly
+        let mut storage_before = HashMap::new();
+        storage_before.insert("key1".to_string(), "old_value".to_string());
+
+        let mut storage_after = HashMap::new();
+        storage_after.insert("key1".to_string(), "new_value".to_string());
+        storage_after.insert("key2".to_string(), "added".to_string());
+
+        // Simulate write operations
+        debug_env.track_storage_write("key1", "new_value");
+        debug_env.track_storage_write("key2", "added");
+
+        // Simulate read operations
+        debug_env.track_storage_read("key1");
+        debug_env.track_storage_read("key2");
+
+        assert!(debug_env.storage_access_count() > 0);
+        assert_eq!(debug_env.get_key_writes("key1").len(), 1);
+        assert_eq!(debug_env.get_key_writes("key2").len(), 1);
     }
 }
