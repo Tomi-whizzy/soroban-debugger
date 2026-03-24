@@ -835,6 +835,10 @@ pub struct AnalyzeArgs {
     #[arg(short, long)]
     pub storage: Option<String>,
 
+    /// Execution timeout in seconds for dynamic analysis (default: 30)
+    #[arg(long, default_value = "30")]
+    pub timeout: u64,
+
     /// Output format (text, json)
     #[arg(long, default_value = "text")]
     pub format: String,

@@ -1,5 +1,27 @@
 use serde::{Deserialize, Serialize};
 
+/// Structured event category used by dynamic security analysis.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DynamicTraceEventKind {
+    Diagnostic,
+    FunctionCall,
+    StorageRead,
+    StorageWrite,
+    Authorization,
+    CrossContractCall,
+}
+
+/// Rich dynamic trace entry produced by the runtime and consumed by analyzers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DynamicTraceEvent {
+    pub sequence: usize,
+    pub kind: DynamicTraceEventKind,
+    pub message: String,
+    pub function: Option<String>,
+    pub storage_key: Option<String>,
+    pub storage_value: Option<String>,
+}
+
 /// Source location information (file, line, column)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceLocation {

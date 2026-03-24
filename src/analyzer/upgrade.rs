@@ -2,7 +2,7 @@ use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// WASM value type
+/// WASM value typess
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WasmType {
     I32,
@@ -197,11 +197,93 @@ impl UpgradeAnalyzer {
 
     /// Compute breaking and non-breaking changes between two sets of function signatures
     fn diff_signatures(
-        _old: &[crate::utils::wasm::ContractFunctionSignature],
-        _new: &[crate::utils::wasm::ContractFunctionSignature],
+        old: &[crate::utils::wasm::ContractFunctionSignature],
+        new: &[crate::utils::wasm::ContractFunctionSignature],
     ) -> (Vec<BreakingChange>, Vec<NonBreakingChange>) {
-        // TODO: Implement signature diffing for ContractFunctionSignature
-        (Vec::new(), Vec::new())
+        use std::collections::BTreeMap;
+
+        let old_by_name: BTreeMap<&str, &crate::utils::wasm::ContractFunctionSignature> =
+            old.iter().map(|sig| (sig.name.as_str(), sig)).collect();
+        let new_by_name: BTreeMap<&str, &crate::utils::wasm::ContractFunctionSignature> =
+            new.iter().map(|sig| (sig.name.as_str(), sig)).collect();
+
+        let mut breaking = Vec::new();
+        let mut non_breaking = Vec::new();
+
+        for name in old_by_name.keys() {
+            if !new_by_name.contains_key(name) {
+                breaking.push(BreakingChange::FunctionRemoved {
+                    name: (*name).to_string(),
+                });
+            }
+        }
+
+        for name in new_by_name.keys() {
+            if !old_by_name.contains_key(name) {
+                non_breaking.push(NonBreakingChange::FunctionAdded {
+                    name: (*name).to_string(),
+                });
+            }
+        }
+
+        for (name, old_sig) in &old_by_name {
+            let Some(new_sig) = new_by_name.get(name) else {
+                continue;
+            };
+
+            if old_sig.params.len() != new_sig.params.len() {
+                breaking.push(BreakingChange::ParameterCountChanged {
+                    name: (*name).to_string(),
+                    old_count: old_sig.params.len(),
+                    new_count: new_sig.params.len(),
+                });
+                continue;
+            }
+
+            for (idx, (old_param, new_param)) in
+                old_sig.params.iter().zip(new_sig.params.iter()).enumerate()
+            {
+                if old_param.type_name != new_param.type_name {
+                    breaking.push(BreakingChange::ParameterTypeChanged {
+                        name: (*name).to_string(),
+                        index: idx,
+                        old_type: parse_contract_type_to_wasm_type(&old_param.type_name),
+                        new_type: parse_contract_type_to_wasm_type(&new_param.type_name),
+                    });
+                }
+            }
+
+            if old_sig.return_type != new_sig.return_type {
+                breaking.push(BreakingChange::ReturnTypeChanged {
+                    name: (*name).to_string(),
+                    old_types: old_sig
+                        .return_type
+                        .iter()
+                        .map(|t| parse_contract_type_to_wasm_type(t))
+                        .collect(),
+                    new_types: new_sig
+                        .return_type
+                        .iter()
+                        .map(|t| parse_contract_type_to_wasm_type(t))
+                        .collect(),
+                });
+            }
+        }
+
+        (breaking, non_breaking)
+    }
+}
+
+fn parse_contract_type_to_wasm_type(type_name: &str) -> WasmType {
+    match type_name.trim().to_ascii_lowercase().as_str() {
+        "i32" => WasmType::I32,
+        "i64" => WasmType::I64,
+        "f32" => WasmType::F32,
+        "f64" => WasmType::F64,
+        "v128" => WasmType::V128,
+        "funcref" => WasmType::FuncRef,
+        "externref" => WasmType::ExternRef,
+        _ => WasmType::Unknown,
     }
 }
 
@@ -229,17 +311,85 @@ mod tests {
     }
 
     #[test]
-    fn test_diff_signatures_placeholder_is_stable() {
+    fn test_diff_signatures_removed_and_added() {
         let sig1 = sig("foo");
         let sig2 = sig("bar");
 
-        let (breaking, non_breaking) = UpgradeAnalyzer::diff_signatures(
-            std::slice::from_ref(&sig1),
-            std::slice::from_ref(&sig2),
-        );
+        let (breaking, non_breaking) = UpgradeAnalyzer::diff_signatures(&[sig1], &[sig2]);
 
-        // Current implementation is a TODO and should not panic on differing inputs.
-        assert!(breaking.is_empty());
+        assert!(breaking.iter().any(|change| matches!(
+            change,
+            BreakingChange::FunctionRemoved { name } if name == "foo"
+        )));
+        assert!(non_breaking.iter().any(|change| matches!(
+            change,
+            NonBreakingChange::FunctionAdded { name } if name == "bar"
+        )));
+    }
+
+    #[test]
+    fn test_diff_signatures_param_and_return_changes() {
+        let old = crate::utils::wasm::ContractFunctionSignature {
+            name: "transfer".to_string(),
+            params: vec![crate::utils::wasm::FunctionParam {
+                name: "amount".to_string(),
+                type_name: "i64".to_string(),
+            }],
+            return_type: Some("i64".to_string()),
+        };
+        let new = crate::utils::wasm::ContractFunctionSignature {
+            name: "transfer".to_string(),
+            params: vec![crate::utils::wasm::FunctionParam {
+                name: "amount".to_string(),
+                type_name: "i32".to_string(),
+            }],
+            return_type: Some("i32".to_string()),
+        };
+
+        let (breaking, non_breaking) = UpgradeAnalyzer::diff_signatures(&[old], &[new]);
+
         assert!(non_breaking.is_empty());
+        assert!(breaking.iter().any(|change| matches!(
+            change,
+            BreakingChange::ParameterTypeChanged { name, index, .. } if name == "transfer" && *index == 0
+        )));
+        assert!(breaking.iter().any(|change| matches!(
+            change,
+            BreakingChange::ReturnTypeChanged { name, .. } if name == "transfer"
+        )));
+    }
+
+    #[test]
+    fn test_diff_signatures_param_count_changed() {
+        let old = crate::utils::wasm::ContractFunctionSignature {
+            name: "mint".to_string(),
+            params: vec![crate::utils::wasm::FunctionParam {
+                name: "to".to_string(),
+                type_name: "Address".to_string(),
+            }],
+            return_type: None,
+        };
+        let new = crate::utils::wasm::ContractFunctionSignature {
+            name: "mint".to_string(),
+            params: vec![
+                crate::utils::wasm::FunctionParam {
+                    name: "to".to_string(),
+                    type_name: "Address".to_string(),
+                },
+                crate::utils::wasm::FunctionParam {
+                    name: "amount".to_string(),
+                    type_name: "i64".to_string(),
+                },
+            ],
+            return_type: None,
+        };
+
+        let (breaking, _) = UpgradeAnalyzer::diff_signatures(&[old], &[new]);
+
+        assert!(breaking.iter().any(|change| matches!(
+            change,
+            BreakingChange::ParameterCountChanged { name, old_count, new_count }
+                if name == "mint" && *old_count == 1 && *new_count == 2
+        )));
     }
 }

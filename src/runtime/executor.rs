@@ -11,6 +11,7 @@
 use crate::inspector::budget::MemorySummary;
 use crate::runtime::env::DebugEnv;
 use crate::runtime::mocking::{MockCallLogEntry, MockContractDispatcher, MockRegistry};
+use crate::server::protocol::{DynamicTraceEvent, DynamicTraceEventKind};
 use crate::utils::arguments::ArgumentParser;
 use crate::{DebuggerError, Result};
 
@@ -114,6 +115,7 @@ impl ContractExecutor {
         let storage_fn = || self.get_storage_snapshot();
         let storage_before = storage_fn()?;
 
+        let timeout_guard = ExecutionTimeoutWatchdog::start(self.timeout_secs);
         let (display, record) = crate::runtime::invoker::invoke_function(
             &self.env,
             &self.contract_address,
@@ -123,6 +125,7 @@ impl ContractExecutor {
             self.timeout_secs,
             storage_fn,
         )?;
+        drop(timeout_guard);
 
         // Track storage changes as accesses
         let storage_after = &record.storage_after;
@@ -456,6 +459,59 @@ impl ContractExecutor {
             .collect())
     }
 
+    /// Build a structured dynamic trace for security analysis.
+    pub fn get_dynamic_trace(&self) -> Result<Vec<DynamicTraceEvent>> {
+        let mut out = Vec::new();
+
+        for access in self.debug_env.storage_accesses() {
+            let (kind, value) = match access.access_type {
+                crate::runtime::env::StorageAccessType::Read => {
+                    (DynamicTraceEventKind::StorageRead, None)
+                }
+                crate::runtime::env::StorageAccessType::Write => {
+                    (DynamicTraceEventKind::StorageWrite, access.value.clone())
+                }
+            };
+
+            out.push(DynamicTraceEvent {
+                sequence: access.sequence,
+                kind,
+                message: format!("storage:{}:{}", access.sequence, access.key),
+                function: None,
+                storage_key: Some(access.key.clone()),
+                storage_value: value,
+            });
+        }
+
+        for call in self.debug_env.function_calls() {
+            out.push(DynamicTraceEvent {
+                sequence: call.sequence,
+                kind: DynamicTraceEventKind::FunctionCall,
+                message: format!("{} -> {}", call.caller, call.callee),
+                function: Some(call.callee.clone()),
+                storage_key: None,
+                storage_value: None,
+            });
+        }
+
+        let mut next_sequence = out.iter().map(|e| e.sequence).max().map_or(0, |n| n + 1);
+        for event in self.get_diagnostic_events().unwrap_or_default() {
+            let message = format!("{:?}", event);
+            out.push(DynamicTraceEvent {
+                sequence: next_sequence,
+                kind: classify_diagnostic_event_kind(&message),
+                message,
+                function: None,
+                storage_key: None,
+                storage_value: None,
+            });
+            next_sequence += 1;
+        }
+
+        out.sort_by_key(|e| e.sequence);
+        Ok(out)
+    }
+
     // ── private helpers ───────────────────────────────────────────────────────
 
     fn install_mock_dispatchers(&self) -> Result<()> {
@@ -491,6 +547,69 @@ impl ContractExecutor {
             DebuggerError::InvalidArguments(format!("Invalid contract id in --mock: {contract_id}"))
                 .into()
         })
+    }
+}
+
+struct ExecutionTimeoutWatchdog {
+    done_tx: Option<std::sync::mpsc::Sender<()>>,
+}
+
+impl ExecutionTimeoutWatchdog {
+    fn start(timeout_secs: u64) -> Self {
+        if timeout_secs == 0 {
+            return Self { done_tx: None };
+        }
+
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            match rx.recv_timeout(std::time::Duration::from_secs(timeout_secs)) {
+                Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    eprintln!(
+                    "Execution timed out after {} seconds. Aborting with exit code 124. Use --timeout to adjust.",
+                    timeout_secs
+                );
+                    std::process::exit(124);
+                }
+            }
+        });
+
+        Self { done_tx: Some(tx) }
+    }
+}
+
+impl Drop for ExecutionTimeoutWatchdog {
+    fn drop(&mut self) {
+        if let Some(tx) = self.done_tx.take() {
+            let _ = tx.send(());
+        }
+    }
+}
+
+fn classify_diagnostic_event_kind(message: &str) -> DynamicTraceEventKind {
+    let lower = message.to_ascii_lowercase();
+
+    if lower.contains("require_auth") || lower.contains("authorized") {
+        DynamicTraceEventKind::Authorization
+    } else if lower.contains("invoke_contract")
+        || lower.contains("call_contract")
+        || lower.contains("contractcall")
+    {
+        DynamicTraceEventKind::CrossContractCall
+    } else if lower.contains("contract_storage_get")
+        || lower.contains("contract_storage_has")
+        || lower.contains("storage_get")
+        || lower.contains("storage_has")
+    {
+        DynamicTraceEventKind::StorageRead
+    } else if lower.contains("contract_storage_put")
+        || lower.contains("contract_storage_update")
+        || lower.contains("storage_put")
+        || lower.contains("storage_update")
+    {
+        DynamicTraceEventKind::StorageWrite
+    } else {
+        DynamicTraceEventKind::Diagnostic
     }
 }
 

@@ -25,7 +25,7 @@ pub fn invoke_function(
     error_db: &ErrorDatabase,
     function: &str,
     parsed_args: Vec<Val>,
-    timeout_secs: u64,
+    _timeout_secs: u64,
     storage_fn: impl Fn() -> Result<HashMap<String, String>>,
 ) -> Result<(String, ExecutionRecord)> {
     info!("Executing function: {}", function);
@@ -73,23 +73,6 @@ pub fn invoke_function(
         })?;
     memory_tracker.record_snapshot(env.host(), "invoke:convert_args");
 
-    // ── Timeout watchdog ──────────────────────────────────────────────────────
-    let (tx, rx) = std::sync::mpsc::channel::<()>();
-    if timeout_secs > 0 {
-        std::thread::spawn(move || {
-            match rx.recv_timeout(std::time::Duration::from_secs(timeout_secs)) {
-                Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    tracing::error!(
-                        "Contract execution timed out after {} seconds.",
-                        timeout_secs
-                    );
-                    std::process::exit(124);
-                }
-            }
-        });
-    }
-
     // ── The actual call ───────────────────────────────────────────────────────
     let budget_before = BudgetInspector::get_cpu_usage(env.host());
     let invocation_result =
@@ -97,7 +80,6 @@ pub fn invoke_function(
     memory_tracker.record_snapshot(env.host(), "invoke:invoke");
 
     spinner.finish_and_clear();
-    let _ = tx.send(());
 
     // Capture storage state after the call.
     let storage_after = storage_fn()?;
