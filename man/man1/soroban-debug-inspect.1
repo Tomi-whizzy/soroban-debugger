@@ -4,7 +4,7 @@
 .SH NAME
 inspect \- Inspect contract information without executing
 .SH SYNOPSIS
-\fBinspect\fR <\fB\-c\fR|\fB\-\-contract\fR> [\fB\-\-functions\fR] [\fB\-\-metadata\fR] [\fB\-\-expected\-hash\fR] [\fB\-\-dependency\-graph\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBinspect\fR <\fB\-c\fR|\fB\-\-contract\fR> [\fB\-\-functions\fR] [\fB\-\-metadata\fR] [\fB\-\-format\fR] [\fB\-\-expected\-hash\fR] [\fB\-\-dependency\-graph\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Inspect contract information without executing
 .SH OPTIONS
@@ -17,6 +17,13 @@ Show exported functions
 .TP
 \fB\-\-metadata\fR
 Show contract metadata
+.TP
+\fB\-\-format\fR \fI<FORMAT>\fR
+Output format: pretty (default) or json
+.br
+
+.br
+[\fIpossible values: \fRpretty, json]
 .TP
 \fB\-\-expected\-hash\fR \fI<EXPECTED_HASH>\fR
 Expected SHA\-256 hash of the WASM file. If provided, loading will fail if the computed hash does not match

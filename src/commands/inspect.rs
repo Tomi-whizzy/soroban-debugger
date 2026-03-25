@@ -1,14 +1,10 @@
 //! `inspect` sub-command – print WASM module stats and embedded contract
 //! metadata to stdout.
 
-use std::{fs, path::Path};
-
+use std::path::Path;
 use crate::{
-    utils::wasm::{
-        extract_contract_metadata, get_module_info,
-        parse_function_signatures, parse_functions,
-    },
-    utils::wasm::{extract_contract_metadata, get_module_info, parse_function_signatures},
+    cli::args::OutputFormat,
+    utils::wasm::{extract_contract_metadata, get_module_info, parse_function_signatures, parse_functions},
     InspectArgs, Result,
 };
 use colored::Colorize;
@@ -16,9 +12,6 @@ use serde::Serialize;
 
 const BAR_WIDTH: usize = 54;
 
-// ─── public entry point ───────────────────────────────────────────────────────
-
-/// CLI entry point for the `inspect` sub-command.
 pub fn run(args: &InspectArgs) -> Result<()> {
     let wasm_file = crate::utils::wasm::load_wasm(&args.contract)
         .map_err(|e| anyhow::anyhow!("Cannot read WASM file '{}': {e}", args.contract.display()))?;
@@ -35,12 +28,35 @@ pub fn run(args: &InspectArgs) -> Result<()> {
         }
     }
 
-    if args.json {
+    if args.functions {
+        output_functions(&args.contract, &wasm_bytes, args.format)
+    } else if args.format == OutputFormat::Json {
         print_json_report(&args.contract, &wasm_bytes)
     } else {
         crate::logging::log_display("", crate::logging::LogLevel::Info);
         print_report(&args.contract, &wasm_bytes)
     }
+}
+
+#[derive(Serialize)]
+struct FunctionParam {
+    name: String,
+    #[serde(rename = "type")]
+    type_name: String,
+}
+
+#[derive(Serialize)]
+struct FunctionSignatureJson {
+    name: String,
+    params: Vec<FunctionParam>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    return_type: Option<String>,
+}
+
+#[derive(Serialize)]
+struct FunctionListing {
+    file: String,
+    exported_functions: Vec<FunctionSignatureJson>,
 }
 
 #[derive(Serialize)]
@@ -51,6 +67,66 @@ struct FullReport {
     functions: Vec<String>,
     signatures: Vec<crate::utils::wasm::FunctionSignature>,
     metadata: crate::utils::wasm::ContractMetadata,
+}
+
+fn output_functions(path: &Path, wasm_bytes: &[u8], format: OutputFormat) -> Result<()> {
+    let signatures = parse_function_signatures(wasm_bytes)?;
+
+    if format == OutputFormat::Json {
+        let exported_functions: Vec<FunctionSignatureJson> = signatures
+            .into_iter()
+            .map(|sig| FunctionSignatureJson {
+                name: sig.name,
+                params: sig
+                    .params
+                    .into_iter()
+                    .map(|p| FunctionParam {
+                        name: p.name,
+                        type_name: p.type_name,
+                    })
+                    .collect(),
+                return_type: sig.return_type.filter(|r| r != "Void"),
+            })
+            .collect();
+
+        let listing = FunctionListing {
+            file: path.display().to_string(),
+            exported_functions,
+        };
+
+        println!("{}", serde_json::to_string_pretty(&listing)?);
+        Ok(())
+    } else {
+        if signatures.is_empty() {
+            let functions = parse_functions(wasm_bytes).unwrap_or_default();
+            if functions.is_empty() {
+                println!("(no contractspecv0 section found and no functions exported)");
+            } else {
+                println!("(no contractspecv0 section found)\nBare functions exported:");
+                for f in functions {
+                    println!("  {}", f);
+                }
+            }
+        } else {
+            let name_w = signatures.iter().map(|s| s.name.len()).max().unwrap_or(8);
+            println!("{:<name_w$}  Signature", "Function", name_w = name_w);
+            println!("{}  {}", "─".repeat(name_w), "─".repeat(BAR_WIDTH - name_w - 4));
+
+            for sig in &signatures {
+                let params: Vec<String> = sig
+                    .params
+                    .iter()
+                    .map(|p| format!("{}: {}", p.name, p.type_name))
+                    .collect();
+                let ret = match &sig.return_type {
+                    Some(t) if t != "Void" => format!(" -> {t}"),
+                    _ => String::new(),
+                };
+                println!("{:<name_w$}  ({}){ret}", sig.name, params.join(", "), name_w = name_w);
+            }
+        }
+        Ok(())
+    }
 }
 
 fn print_json_report(path: &Path, wasm_bytes: &[u8]) -> Result<()> {
@@ -83,199 +159,102 @@ fn print_report(path: &Path, wasm_bytes: &[u8]) -> Result<()> {
     let metadata = extract_contract_metadata(wasm_bytes)?;
 
     let heavy = "═".repeat(BAR_WIDTH);
+    let size_kb = wasm_bytes.len() as f64 / 1024.0;
 
-    println!("{heavy}");
-    println!("  {}", "Soroban Contract Inspector".bold().cyan());
-    println!("{heavy}\n");
-    println!("  File : {}", path.display().to_string().bright_white());
-    println!("  Size : {} ({:.2} KB)\n", 
-        format!("{} bytes", wasm_bytes.len()).bright_white(),
-        wasm_bytes.len() as f64 / 1024.0
-    );
-    // ── header ────────────────────────────────────────────────────────────────
-    crate::logging::log_display(&heavy, crate::logging::LogLevel::Info);
-    crate::logging::log_display(
-        format!("  {}", "Soroban Contract Inspector".bold().cyan()),
-        crate::logging::LogLevel::Info,
-    );
-    crate::logging::log_display(&heavy, crate::logging::LogLevel::Info);
-    crate::logging::log_display("", crate::logging::LogLevel::Info);
-    crate::logging::log_display(
-        format!("  File : {}", path.display().to_string().bright_white()),
-        crate::logging::LogLevel::Info,
-    );
-    crate::logging::log_display(
-        format!(
-            "  Size : {} ({:.2} KB)",
-            format!("{} bytes", wasm_bytes.len()).bright_white(),
-            wasm_bytes.len() as f64 / 1024.0
-        ),
-        crate::logging::LogLevel::Info,
-    );
-    crate::logging::log_display("", crate::logging::LogLevel::Info);
+    log_both(&heavy);
+    log_both(&format!("  {}", "Soroban Contract Inspector".bold().cyan()));
+    log_both(&heavy);
+    log_both("");
+    log_both(&format!("  File : {}", path.display().to_string().bright_white()));
+    log_both(&format!("  Size : {} ({:.2} KB)\n", 
+        format!("{} bytes", wasm_bytes.len()).bright_white(), size_kb));
 
     section_header("Module Statistics");
-    println!("  Types      : {}", info.type_count.to_string().bright_white());
-    println!("  Functions  : {}", info.function_count.to_string().bright_white());
-    println!("  Exports    : {}\n", info.export_count.to_string().bright_white());
-    crate::logging::log_display(
-        format!(
-            "  Types      : {}",
-            info.type_count.to_string().bright_white()
-        ),
-        crate::logging::LogLevel::Info,
-    );
-    crate::logging::log_display(
-        format!(
-            "  Functions  : {}",
-            info.function_count.to_string().bright_white()
-        ),
-        crate::logging::LogLevel::Info,
-    );
-    crate::logging::log_display(
-        format!(
-            "  Exports    : {}",
-            info.export_count.to_string().bright_white()
-        ),
-        crate::logging::LogLevel::Info,
-    );
-    crate::logging::log_display("", crate::logging::LogLevel::Info);
+    log_both(&format!("  Types      : {}", info.type_count.to_string().bright_white()));
+    log_both(&format!("  Functions  : {}", info.function_count.to_string().bright_white()));
+    log_both(&format!("  Exports    : {}\n", info.export_count.to_string().bright_white()));
 
     section_header("WASM Section Breakdown");
-    crate::logging::log_display(
-        format!("  {:<20} | {:>10} | {:>6}", "Section", "Size", "Total%"),
-        crate::logging::LogLevel::Info,
-    );
-    crate::logging::log_display(
-        format!("  {}|{}|{}", "─".repeat(21), "─".repeat(12), "─".repeat(8)),
-        crate::logging::LogLevel::Info,
-    );
+    log_both(&format!("  {:<20} | {:>10} | {:>6}", "Section", "Size", "Total%"));
+    log_both(&format!("  {}|{}|{}", "─".repeat(21), "─".repeat(12), "─".repeat(8)));
 
     for section in &info.sections {
         let percentage = (section.size as f64 / info.total_size as f64) * 100.0;
-        let size_str = format!("{} B", section.size);
-        
         let row = format!("  {:<20} | {:>10} | {:>5.1}%", 
-            section.name, size_str, percentage
-        );
-
-        if percentage > 50.0 {
-            println!("{}", row.yellow().bold());
-
-        let row = format!(
-            "  {:<20} | {:>10} | {:>5.1}%",
-            section.name, size_str, percentage
-        );
-
-        // Highlight sections over 50KB or more than 50% of total
+            section.name, format!("{} B", section.size), percentage);
+        
         if section.size > 50 * 1024 || percentage > 50.0 {
-            crate::logging::log_display(
-                row.red().bold().to_string(),
-                crate::logging::LogLevel::Info,
-            );
+            log_both(&row.red().bold().to_string());
         } else if section.size > 10 * 1024 {
-            crate::logging::log_display(row.yellow().to_string(), crate::logging::LogLevel::Info);
+            log_both(&row.yellow().to_string());
         } else {
-            crate::logging::log_display(
-                row.bright_white().to_string(),
-                crate::logging::LogLevel::Info,
-            );
+            log_both(&row.bright_white().to_string());
         }
     }
-    crate::logging::log_display("", crate::logging::LogLevel::Info);
+    log_both("");
 
     section_header("Exported Functions");
     if signatures.is_empty() {
         let functions = parse_functions(wasm_bytes).unwrap_or_default();
         if functions.is_empty() {
-            println!("  (no contractspecv0 section found and no functions exported)");
+            log_both("  (no contractspecv0 section found and no functions exported)");
         } else {
-            println!("  (no contractspecv0 section found)");
-            println!("  Bare functions exported:");
+            log_both("  (no contractspecv0 section found)");
+            log_both("  Bare functions exported:");
             for f in functions {
-                println!("    {}", f);
+                log_both(&format!("    {}", f));
             }
         }
-        crate::logging::log_display(
-            "  (no contractspecv0 section found)",
-            crate::logging::LogLevel::Info,
-        );
     } else {
         let name_w = signatures.iter().map(|s| s.name.len()).max().unwrap_or(8);
-        crate::logging::log_display(
-            format!("  {:<name_w$}  Signature", "Function", name_w = name_w),
-            crate::logging::LogLevel::Info,
-        );
-        crate::logging::log_display(
-            format!(
-                "  {}  {}",
-                "─".repeat(name_w),
-                "─".repeat(BAR_WIDTH - name_w - 4)
-            ),
-            crate::logging::LogLevel::Info,
-        );
+        log_both(&format!("  {:<name_w$}  Signature", "Function", name_w = name_w));
+        log_both(&format!("  {}  {}", "─".repeat(name_w), "─".repeat(BAR_WIDTH - name_w - 4)));
 
         for sig in &signatures {
-            let params: Vec<String> = sig.params.iter()
-                .map(|p| format!("{}: {}", p.name, p.type_name)).collect();
-
-            let ret = match &sig.return_type {
-                Some(t) => format!(" -> {t}"),
-                None    => " -> Void".to_string(),
-                Some(t) if t != "Void" => format!(" -> {t}"),
-                _ => String::new(),
-            };
-
-            println!("  {:<name_w$}  ({}){ret}", sig.name, params.join(", "), name_w = name_w);
-            crate::logging::log_display(
-                format!(
-                    "  {:<name_w$}  ({}){ret}",
-                    sig.name,
-                    params.join(", "),
-                    name_w = name_w,
-                ),
-                crate::logging::LogLevel::Info,
-            );
+            let params = sig.params.iter()
+                .map(|p| format!("{}: {}", p.name, p.type_name))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let ret = sig.return_type.as_ref()
+                .filter(|t| t != "Void")
+                .map(|t| format!(" -> {t}"))
+                .unwrap_or_default();
+            log_both(&format!("  {:<name_w$}  ({}){ret}", sig.name, params, name_w = name_w));
         }
     }
-    crate::logging::log_display("", crate::logging::LogLevel::Info);
+    log_both("");
 
     section_header("Contract Metadata");
     if metadata.is_empty() {
-        crate::logging::log_display(
-            "  ⚠  No metadata section embedded in this contract.",
-            crate::logging::LogLevel::Info,
-        );
+        log_both("  ⚠  No metadata section embedded in this contract.");
     } else {
-        print_field("Contract Version", &metadata.contract_version);
-        print_field("SDK Version", &metadata.sdk_version);
-        print_field("Build Date", &metadata.build_date);
-        print_field("Author / Org", &metadata.author);
-        print_field("Description", &metadata.description);
-        print_field("Implementation", &metadata.implementation);
+        log_both_if_some("Contract Version", &metadata.contract_version);
+        log_both_if_some("SDK Version", &metadata.sdk_version);
+        log_both_if_some("Build Date", &metadata.build_date);
+        log_both_if_some("Author / Org", &metadata.author);
+        log_both_if_some("Description", &metadata.description);
+        log_both_if_some("Implementation", &metadata.implementation);
     }
 
-    crate::logging::log_display(&heavy, crate::logging::LogLevel::Info);
+    log_both(&heavy);
     Ok(())
+}
+
+fn log_both(msg: &str) {
+    println!("{}", msg);
+    crate::logging::log_display(msg, crate::logging::LogLevel::Info);
+}
+
+fn log_both_if_some(label: &str, value: &Option<String>) {
+    if let Some(v) = value {
+        let msg = format!("  {label:<20} : {v}");
+        log_both(&msg);
+    }
 }
 
 fn section_header(title: &str) {
     let fill = BAR_WIDTH.saturating_sub(title.len() + 5);
-    crate::logging::log_display(
-        format!("─── {title} {}", "─".repeat(fill)),
-        crate::logging::LogLevel::Info,
-    );
-}
-
-fn print_field(label: &str, value: &Option<String>) {
-    if let Some(v) = value {
-        println!("  {label:<20} : {v}");
-        // Left-align the label in a 20-char column for consistent spacing.
-        crate::logging::log_display(
-            format!("  {label:<20} : {v}"),
-            crate::logging::LogLevel::Info,
-        );
-    }
+    log_both(&format!("─── {title} {}", "─".repeat(fill)));
 }
 
 // ─── tests ────────────────────────────────────────────────────────────────────
@@ -349,15 +328,46 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // ── print_field helper ────────────────────────────────────────────────────
-
     #[test]
-    fn print_field_with_none_does_not_panic() {
-        print_field("Any Label", &None);
+    fn output_functions_json_on_metadata_absent_succeeds() {
+        let result = output_functions(Path::new("test.wasm"), &bare_wasm(), OutputFormat::Json);
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
     }
 
     #[test]
-    fn print_field_with_some_does_not_panic() {
-        print_field("Any Label", &Some("a value".to_string()));
+    fn output_functions_pretty_on_metadata_absent_succeeds() {
+        let result = output_functions(Path::new("test.wasm"), &bare_wasm(), OutputFormat::Pretty);
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+    }
+
+    #[test] 
+    fn function_listing_serializes_to_valid_json() {
+        let listing = FunctionListing {
+            file: "test.wasm".to_string(),
+            exported_functions: vec![
+                FunctionSignatureJson {
+                    name: "initialize".to_string(),
+                    params: vec![
+                        FunctionParam {
+                            name: "admin".to_string(),
+                            type_name: "Address".to_string(),
+                        },
+                    ],
+                    return_type: None,
+                },
+                FunctionSignatureJson {
+                    name: "get_value".to_string(),
+                    params: vec![],
+                    return_type: Some("i64".to_string()),
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&listing).expect("Failed to serialize");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("Invalid JSON");
+
+        assert!(parsed["file"].is_string());
+        assert!(parsed["exported_functions"].is_array());
+        assert_eq!(parsed["exported_functions"].as_array().unwrap().len(), 2);
     }
 }

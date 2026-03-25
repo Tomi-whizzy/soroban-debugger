@@ -33,7 +33,7 @@ fn test_inspect_with_empty_wasm_file() {
 }
 
 #[test]
-fn test_inspect_accepts_json_format_flag() {
+fn test_inspect_accepts_format_flag_json() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let contract_file = temp_dir.path().join("contract.wasm");
     std::fs::write(&contract_file, b"dummy").expect("Failed to write temp file");
@@ -48,4 +48,45 @@ fn test_inspect_accepts_json_format_flag() {
             "json",
         ])
         .output();
+}
+
+#[test]
+fn test_inspect_functions_flag_exists() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let contract_file = temp_dir.path().join("contract.wasm");
+    std::fs::write(&contract_file, b"dummy").expect("Failed to write temp file");
+
+    let mut cmd = assert_cmd::Command::cargo_bin("soroban-debug").expect("Failed to find binary");
+    let _ = cmd
+        .args([
+            "inspect",
+            "--contract",
+            contract_file.to_str().unwrap(),
+            "--functions",
+        ])
+        .output();
+}
+
+#[test]
+fn test_inspect_functions_with_json_format() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let contract_file = temp_dir.path().join("contract.wasm");
+    std::fs::write(&contract_file, b"dummy").expect("Failed to write temp file");
+
+    let mut cmd = assert_cmd::Command::cargo_bin("soroban-debug").expect("Failed to find binary");
+    let output = cmd
+        .args([
+            "inspect",
+            "--contract",
+            contract_file.to_str().unwrap(),
+            "--functions",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Failed to execute command");
+
+    if output.status.is_err() {
+        assert_eq!(output.status.code(), Some(1));
+    }
 }
