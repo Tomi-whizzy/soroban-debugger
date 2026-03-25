@@ -47,9 +47,10 @@ impl RemoteClient {
                     info!("Authentication successful");
                     Ok(())
                 } else {
+                    let sanitized = sanitize_auth_message(&message, token);
                     Err(DebuggerError::ExecutionError(format!(
                         "Authentication failed: {}",
-                        message
+                        sanitized
                     ))
                     .into())
                 }
@@ -419,6 +420,14 @@ fn parse_response_line(expected_id: u64, response_line: &str) -> Result<DebugRes
     })
 }
 
+fn sanitize_auth_message(message: &str, token: &str) -> String {
+    if token.is_empty() {
+        return message.to_string();
+    }
+
+    message.replace(token, "<redacted>")
+}
+
 impl Drop for RemoteClient {
     fn drop(&mut self) {
         let _ = self.disconnect();
@@ -450,5 +459,15 @@ mod tests {
     fn connect_failure_is_network_error_category() {
         let err = RemoteClient::connect("127.0.0.1:1", None).unwrap_err();
         assert!(err.to_string().contains("Network/transport error"));
+    }
+
+    #[test]
+    fn sanitize_auth_message_redacts_token_echo() {
+        let sanitized = sanitize_auth_message(
+            "Authentication failed for token super-secret-token",
+            "super-secret-token",
+        );
+        assert!(sanitized.contains("<redacted>"));
+        assert!(!sanitized.contains("super-secret-token"));
     }
 }

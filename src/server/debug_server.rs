@@ -54,6 +54,12 @@ impl DebugServer {
             .await
             .map_err(|e| miette::miette!("Failed to bind to {}: {}", addr, e))?;
         info!("Debug server listening on {}", addr);
+        if self.token.is_some() && self.tls_config.is_none() {
+            warn!(
+                "Token authentication is enabled without TLS. Treat this as plaintext transport and \
+                 restrict access to trusted network boundaries or add TLS termination."
+            );
+        }
 
         let acceptor = self
             .tls_config
@@ -112,7 +118,7 @@ impl DebugServer {
                 warn!("Received message without request");
                 continue;
             };
-            info!("Received request: {:?}", request);
+            info!("Received request: {}", summarize_request(&request));
 
             if matches!(request, DebugRequest::Ping) {
                 let response = DebugMessage::response(message.id, DebugResponse::Pong);
@@ -728,6 +734,60 @@ fn current_storage(engine: &DebuggerEngine) -> Result<std::collections::HashMap<
         .collect())
 }
 
+fn summarize_request(request: &DebugRequest) -> String {
+    match request {
+        DebugRequest::Authenticate { token } => {
+            format!("Authenticate {{ token: {} }}", redact_secret(token))
+        }
+        DebugRequest::LoadContract { contract_path } => {
+            format!("LoadContract {{ contract_path: {:?} }}", contract_path)
+        }
+        DebugRequest::Execute { function, args } => {
+            format!(
+                "Execute {{ function: {:?}, args_present: {} }}",
+                function,
+                args.is_some()
+            )
+        }
+        DebugRequest::StepIn => "StepIn".to_string(),
+        DebugRequest::Next => "Next".to_string(),
+        DebugRequest::StepOut => "StepOut".to_string(),
+        DebugRequest::Continue => "Continue".to_string(),
+        DebugRequest::Inspect => "Inspect".to_string(),
+        DebugRequest::GetStorage => "GetStorage".to_string(),
+        DebugRequest::GetStack => "GetStack".to_string(),
+        DebugRequest::GetBudget => "GetBudget".to_string(),
+        DebugRequest::SetBreakpoint { id, function, .. } => {
+            format!("SetBreakpoint {{ id: {:?}, function: {:?} }}", id, function)
+        }
+        DebugRequest::ClearBreakpoint { id } => {
+            format!("ClearBreakpoint {{ id: {:?} }}", id)
+        }
+        DebugRequest::ListBreakpoints => "ListBreakpoints".to_string(),
+        DebugRequest::GetCapabilities => "GetCapabilities".to_string(),
+        DebugRequest::SetStorage { .. } => "SetStorage { storage_json: <redacted> }".to_string(),
+        DebugRequest::LoadSnapshot { snapshot_path } => {
+            format!("LoadSnapshot {{ snapshot_path: {:?} }}", snapshot_path)
+        }
+        DebugRequest::Evaluate { expression, frame_id } => {
+            format!(
+                "Evaluate {{ expression: {:?}, frame_id: {:?} }}",
+                expression, frame_id
+            )
+        }
+        DebugRequest::Ping => "Ping".to_string(),
+        DebugRequest::Disconnect => "Disconnect".to_string(),
+    }
+}
+
+fn redact_secret(secret: &str) -> String {
+    if secret.is_empty() {
+        "<redacted:empty>".to_string()
+    } else {
+        format!("<redacted:{} chars>", secret.chars().count())
+    }
+}
+
 fn load_tls_config(cert_path: &Path, key_path: &Path) -> Result<ServerConfig> {
     let cert_file = fs::File::open(cert_path)
         .map_err(|e| miette::miette!("Failed to open cert file {:?}: {}", cert_path, e))?;
@@ -755,4 +815,28 @@ fn load_tls_config(cert_path: &Path, key_path: &Path) -> Result<ServerConfig> {
         .map_err(|e| miette::miette!("Failed to setup TLS config: {}", e))?;
 
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::protocol::DebugRequest;
+
+    #[test]
+    fn request_summary_redacts_auth_token() {
+        let summary = summarize_request(&DebugRequest::Authenticate {
+            token: "super-secret-token".to_string(),
+        });
+        assert!(summary.contains("<redacted:18 chars>"));
+        assert!(!summary.contains("super-secret-token"));
+    }
+
+    #[test]
+    fn request_summary_redacts_storage_payloads() {
+        let summary = summarize_request(&DebugRequest::SetStorage {
+            storage_json: "{\"token\":\"secret\"}".to_string(),
+        });
+        assert!(summary.contains("<redacted>"));
+        assert!(!summary.contains("secret"));
+    }
 }

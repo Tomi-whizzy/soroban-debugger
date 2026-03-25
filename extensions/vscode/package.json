@@ -80,8 +80,8 @@
               },
               "token": {
                 "type": "string",
-                "description": "Optional single-line authentication token for the debugger server.",
-                "minLength": 1,
+                "description": "Optional single-line authentication token for the debugger server. Use at least 16 characters; prefer a random 32-byte token.",
+                "minLength": 16,
                 "pattern": ".*\\S.*"
               }
             }

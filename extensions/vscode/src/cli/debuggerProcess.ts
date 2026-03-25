@@ -140,6 +140,13 @@ export async function validateLaunchConfig(config: DebuggerProcessConfig): Promi
         expected: 'A non-empty authentication token, or omit the field entirely.',
         quickFixes: ['openLaunchConfig', 'openSettings']
       });
+    } else if (config.token.trim().length < 16) {
+      issues.push({
+        field: 'token',
+        message: "Launch config field 'token' is too short for remote debugging.",
+        expected: 'Use at least 16 characters, preferably a cryptographically random 32-byte token.',
+        quickFixes: ['openLaunchConfig', 'openSettings']
+      });
     } else if (/[\r\n]/.test(config.token)) {
       issues.push({
         field: 'token',
