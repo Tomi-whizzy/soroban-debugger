@@ -4,6 +4,8 @@ A Visual Studio Code extension that integrates the Soroban smart contract debugg
 
 ## Features
 
+- **Launch Preflight Command**: Validate a Soroban launch configuration from the command palette without starting the backend
+
 - 🔍 **Breakpoint Management**: Set, clear, and manage breakpoints directly in the VS Code editor
 - 📊 **Variable Inspection**: View and inspect contract storage state in the Variables panel
 - 📚 **Call Stack Visualization**: Examine the function call stack during execution
@@ -76,6 +78,16 @@ Add the following to your project's `.vscode/launch.json`:
   ]
 }
 ```
+
+### 1a. Run Launch Preflight
+
+Before starting a debug session, you can validate the Soroban launch configuration directly from the command palette:
+
+1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS)
+2. Run `Soroban: Run Launch Preflight`
+3. Pick the Soroban launch configuration you want to validate when prompted
+
+If preflight finds a problem, the extension reports the issue and offers quick fixes such as opening `launch.json`, generating a launch config, or selecting a missing file.
 
 ### 2. Build Your Contract
 
@@ -298,6 +310,7 @@ The extension consists of three main components:
 - Ensure the `soroban-debug` CLI is in your PATH, or set `binaryPath`
 - Verify contract path points to a valid WASM file
 - Check that snapshot.json exists and is valid JSON
+- Run `Soroban: Run Launch Preflight` from the command palette to catch launch configuration issues before starting a session
 
 ### Breakpoints not working
 

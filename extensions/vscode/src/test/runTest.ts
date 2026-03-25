@@ -6,6 +6,12 @@ import * as path from 'path';
 import { DebuggerProcess, validateLaunchConfig, formatProtocolMismatchMessage, DebuggerTimeoutError } from '../cli/debuggerProcess';
 import { resolveSourceBreakpoints } from '../dap/sourceBreakpoints';
 import { VariableStore } from '../dap/variableStore';
+import {
+  collectSorobanLaunchConfigs,
+  formatPreflightFailureMessage,
+  runLaunchPreflightCommand
+} from '../preflightCommand';
+import { DapClient } from './dapClient';
 
 type DebugMessage = {
   id: number;
@@ -51,6 +57,16 @@ async function startMockDebuggerServer(options: { evaluateDelayMs: number }): Pr
         };
 
         switch (message.request.type) {
+          case 'Handshake':
+            respond({
+              type: 'HandshakeAck',
+              server_name: 'mock-soroban-debug',
+              server_version: '0.1.0',
+              protocol_min: 1,
+              protocol_max: 1,
+              selected_version: 1
+            });
+            break;
           case 'Authenticate':
             respond({ type: 'Authenticated', success: true, message: 'ok' });
             break;
@@ -274,6 +290,156 @@ async function main(): Promise<void> {
   assert.equal(badToken.ok, false, 'Expected blank token to fail preflight');
   assert.equal(badToken.issues[0].field, 'token');
 
+  {
+    const candidates = collectSorobanLaunchConfigs([
+      {
+        folder: { name: 'workspace-a' },
+        configurations: [
+          { name: 'Soroban: First', type: 'soroban', request: 'launch', contractPath: contractPath },
+          { name: 'Ignored', type: 'node', request: 'launch' }
+        ]
+      },
+      {
+        folder: { name: 'workspace-b' },
+        configurations: [
+          { name: 'Soroban: Second', type: 'soroban', request: 'launch', contractPath: 'contract-b.wasm' }
+        ]
+      }
+    ]);
+
+    assert.equal(candidates.length, 2, 'Expected only Soroban launch configs to be collected');
+    assert.equal(candidates[0].description, 'workspace-a');
+    assert.equal(candidates[1].description, 'workspace-b');
+  }
+
+  {
+    const applyQuickFixCalls: string[] = [];
+    let infoMessage = '';
+
+    const outcome = await runLaunchPreflightCommand({
+      launchConfigSources: [{
+        folder: { name: 'workspace-a' },
+        configurations: [
+          { name: 'Soroban: Happy Path', type: 'soroban', request: 'launch', contractPath }
+        ]
+      }],
+      selectLaunchConfig: async () => {
+        throw new Error('Did not expect configuration picker for a single config');
+      },
+      validateLaunchConfig: async () => ({
+        ok: true,
+        issues: [],
+        resolvedBinaryPath: preflightBinaryPath
+      }),
+      showInformationMessage: async (message: string) => {
+        infoMessage = message;
+        return undefined;
+      },
+      showWarningMessage: async () => undefined,
+      showErrorMessage: async () => undefined,
+      applyQuickFix: async (quickFix) => {
+        applyQuickFixCalls.push(quickFix);
+      }
+    });
+
+    assert.equal(outcome, 'passed');
+    assert.match(infoMessage, /backend was not started/i);
+    assert.deepEqual(applyQuickFixCalls, []);
+  }
+
+  {
+    const applyQuickFixCalls: string[] = [];
+    let errorMessage = '';
+
+    const outcome = await runLaunchPreflightCommand({
+      launchConfigSources: [{
+        folder: { name: 'workspace-a' },
+        configurations: [
+          { name: 'Soroban: Broken', type: 'soroban', request: 'launch', contractPath }
+        ]
+      }],
+      selectLaunchConfig: async () => {
+        throw new Error('Did not expect configuration picker for a single config');
+      },
+      validateLaunchConfig: async () => ({
+        ok: false,
+        issues: [
+          {
+            field: 'contractPath',
+            message: "Launch config field 'contractPath' points to a missing file.",
+            expected: 'A readable .wasm file.',
+            quickFixes: ['pickContract', 'openLaunchConfig']
+          },
+          {
+            field: 'args',
+            message: "Launch config field 'args' must be an array.",
+            expected: 'A JSON array.',
+            quickFixes: ['openLaunchConfig']
+          }
+        ],
+        resolvedBinaryPath: preflightBinaryPath
+      }),
+      showInformationMessage: async () => undefined,
+      showWarningMessage: async () => undefined,
+      showErrorMessage: async (message: string, ...actions: string[]) => {
+        errorMessage = message;
+        assert.deepEqual(actions, ['Select Contract', 'Open launch.json']);
+        return 'Select Contract';
+      },
+      applyQuickFix: async (quickFix) => {
+        applyQuickFixCalls.push(quickFix);
+      }
+    });
+
+    assert.equal(outcome, 'failed');
+    assert.match(errorMessage, /found 2 issues/i);
+    assert.deepEqual(applyQuickFixCalls, ['pickContract']);
+    assert.match(
+      formatPreflightFailureMessage(
+        { label: 'Soroban: Broken', config: { contractPath } },
+        [
+          {
+            field: 'contractPath',
+            message: 'missing',
+            expected: 'expected',
+            quickFixes: ['pickContract']
+          }
+        ]
+      ),
+      /Soroban: Broken/
+    );
+  }
+
+  {
+    const applyQuickFixCalls: string[] = [];
+    let warningMessage = '';
+
+    const outcome = await runLaunchPreflightCommand({
+      launchConfigSources: [{
+        folder: { name: 'workspace-a' },
+        configurations: []
+      }],
+      selectLaunchConfig: async () => undefined,
+      validateLaunchConfig: async () => {
+        throw new Error('Did not expect validation with no launch config');
+      },
+      showInformationMessage: async () => undefined,
+      showWarningMessage: async (message: string, ...actions: string[]) => {
+        warningMessage = message;
+        assert.deepEqual(actions, ['Generate Launch Config', 'Open launch.json']);
+        return 'Generate Launch Config';
+      },
+      showErrorMessage: async () => undefined,
+      applyQuickFix: async (quickFix) => {
+        applyQuickFixCalls.push(quickFix);
+      }
+    });
+
+    assert.equal(outcome, 'no-config');
+    assert.match(warningMessage, /No Soroban launch configurations were found/);
+    assert.deepEqual(applyQuickFixCalls, ['generateLaunchConfig']);
+  }
+
   const binaryPath = process.env.SOROBAN_DEBUG_BIN
     || path.join(repoRoot, 'target', 'debug', process.platform === 'win32' ? 'soroban-debug.exe' : 'soroban-debug');
 
@@ -416,12 +582,12 @@ async function runDapHappyPathE2E(
     const configDone = await client.request('configurationDone', {});
     assert.equal(configDone.success, true, `configurationDone failed: ${configDone.message || ''}`);
 
-    await client.waitForEvent('stopped', (e) => e.body?.reason === 'entry');
+    await client.waitForEvent('stopped', (e: any) => e.body?.reason === 'entry');
 
     const cont = await client.request('continue', { threadId: 1 }, 30_000);
     assert.equal(cont.success, true, `continue failed: ${cont.message || ''}`);
 
-    await client.waitForEvent('stopped', (e) => e.body?.reason === 'breakpoint', 30_000);
+    await client.waitForEvent('stopped', (e: any) => e.body?.reason === 'breakpoint', 30_000);
 
     const threads = await client.request('threads', {});
     assert.equal(threads.success, true);

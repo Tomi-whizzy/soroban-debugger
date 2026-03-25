@@ -5,8 +5,13 @@ import {
   ExitedEvent} from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import * as readline from 'readline';
-import { DebuggerProcess, DebuggerProcessConfig } from '../cli/debuggerProcess';
-import { DebuggerState, Variable } from './protocol';
+import {
+  DebuggerProcess,
+  DebuggerProcessConfig,
+  DebuggerTimeoutError,
+  validateLaunchConfig
+} from '../cli/debuggerProcess';
+import { BreakpointCapabilities, BreakpointLocation, DebuggerState, Variable } from './protocol';
 import { VariableStore } from './variableStore';
 import { ResolvedBreakpoint, resolveSourceBreakpoints } from './sourceBreakpoints';
 import { LogOutputEvent, LogLevel } from '@vscode/debugadapter/lib/logger';
@@ -34,6 +39,27 @@ export class SorobanDebugSession extends DebugSession {
   private requestAbortControllers = new Map<number, AbortController>();
   private refreshAbortController: AbortController | null = null;
   private refreshGeneration = 0;
+  private backendCapabilities: BreakpointCapabilities = {
+    conditionalBreakpoints: false,
+    hitConditionalBreakpoints: false,
+    logPoints: false
+  };
+
+  constructor(
+    obsoleteDebuggerLinesAndColumnsStartAt1?: boolean | LogManager,
+    obsoleteIsServer?: boolean
+  ) {
+    super(
+      typeof obsoleteDebuggerLinesAndColumnsStartAt1 === 'boolean'
+        ? obsoleteDebuggerLinesAndColumnsStartAt1
+        : undefined,
+      obsoleteIsServer
+    );
+
+    if (obsoleteDebuggerLinesAndColumnsStartAt1 && typeof obsoleteDebuggerLinesAndColumnsStartAt1 !== 'boolean') {
+      this.logManager = obsoleteDebuggerLinesAndColumnsStartAt1;
+    }
+  }
 
   protected initializeRequest(
     response: DebugProtocol.InitializeResponse,
@@ -308,9 +334,7 @@ export class SorobanDebugSession extends DebugSession {
       }
 
       if (expression === 'storage' || expression === 'Storage') {
-        const storageObject = Object.fromEntries(
-          (this.state.variables || []).map((v) => [v.name, v.value])
-        );
+        const storageObject = this.state.storage || {};
         response.body = {
           result: JSON.stringify(storageObject),
           variablesReference: 0
@@ -321,12 +345,12 @@ export class SorobanDebugSession extends DebugSession {
 
       if (expression.startsWith('storage.')) {
         const key = expression.slice('storage.'.length);
-        const match = (this.state.variables || []).find((v) => v.name === key);
-        if (!match) {
+        const storageValue = (this.state.storage || {})[key];
+        if (storageValue === undefined) {
           throw new Error(`Unknown storage key: ${key}`);
         }
         response.body = {
-          result: match.value,
+          result: typeof storageValue === 'string' ? storageValue : JSON.stringify(storageValue),
           variablesReference: 0
         };
         this.sendResponse(response);
@@ -455,26 +479,18 @@ export class SorobanDebugSession extends DebugSession {
     args: DebugProtocol.ConfigurationDoneArguments
   ): Promise<void> {
     try {
-      const requestSeq = (response as any).request_seq as number | undefined;
-      const controller = new AbortController();
-      if (typeof requestSeq === 'number') {
-        this.requestAbortControllers.set(requestSeq, controller);
+      this.sendResponse(response);
+
+      if (!this.debuggerProcess || this.hasExecuted) {
+        return;
       }
 
-      const result = await this.debuggerProcess.evaluate(args.expression, args.frameId, {
-        signal: controller.signal
-      });
-      response.body = {
-        result: result.result,
-        type: result.type,
-        variablesReference: result.variablesReference
-      };
-      this.sendResponse(response);
+      await this.runExecution('entry');
     } catch (error) {
       if ((error as any)?.name === 'AbortError' || (error as any)?.name === 'TimeoutError') {
         this.sendErrorResponse(response, {
           id: 1006,
-          format: 'Evaluation canceled',
+          format: 'Configuration completion canceled',
           showUser: false
         });
         return;
@@ -560,7 +576,7 @@ export class SorobanDebugSession extends DebugSession {
 
     if (result.paused) {
       this.state.isPaused = true;
-      this.sendEvent(new StoppedEvent('breakpoint', this.threadId));
+      this.sendEvent(new StoppedEvent(reason, this.threadId));
       return;
     }
 

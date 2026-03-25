@@ -14,6 +14,8 @@ export interface DebuggerProcessConfig {
   binaryPath?: string;
   port?: number;
   token?: string;
+  requestTimeoutMs?: number;
+  connectTimeoutMs?: number;
   /**
    * When false, `start()` will only connect to an already-running debugger server
    * at `port` and will not spawn the CLI process.
@@ -47,6 +49,66 @@ export interface BackendBreakpointCapabilities {
   conditionalBreakpoints: boolean;
   hitConditionalBreakpoints: boolean;
   logPoints: boolean;
+}
+
+export type LaunchPreflightQuickFix =
+  | 'pickBinary'
+  | 'pickContract'
+  | 'pickSnapshot'
+  | 'openLaunchConfig'
+  | 'generateLaunchConfig'
+  | 'openSettings';
+
+export interface LaunchPreflightIssue {
+  field: 'binaryPath' | 'contractPath' | 'snapshotPath' | 'entrypoint' | 'args' | 'port' | 'token';
+  message: string;
+  expected: string;
+  quickFixes: LaunchPreflightQuickFix[];
+}
+
+export interface LaunchPreflightResult {
+  ok: boolean;
+  issues: LaunchPreflightIssue[];
+  resolvedBinaryPath: string;
+}
+
+type ProtocolMismatchDetails = {
+  extensionVersion: string;
+  backendName?: string;
+  backendVersion?: string;
+  backendProtocolMin?: number;
+  backendProtocolMax?: number;
+  extra?: string;
+};
+
+export class DebuggerTimeoutError extends Error {
+  name = 'TimeoutError';
+
+  constructor(
+    public readonly requestType: string,
+    public readonly timeoutMs: number
+  ) {
+    super(`${requestType} timed out after ${timeoutMs}ms`);
+  }
+}
+
+export function formatProtocolMismatchMessage(details: ProtocolMismatchDetails): string {
+  const backendName = details.backendName ?? 'soroban-debug';
+  const backendVersion = details.backendVersion ?? 'unknown';
+  const backendProtocol = details.backendProtocolMin !== undefined && details.backendProtocolMax !== undefined
+    ? `[${details.backendProtocolMin}..=${details.backendProtocolMax}]`
+    : 'unknown';
+
+  const extra = details.extra?.trim();
+  const extraLine = extra ? `\nDetails: ${extra}` : '';
+
+  return [
+    'Soroban debugger protocol negotiation failed.',
+    `Extension version: ${details.extensionVersion} (supports protocol [${WIRE_PROTOCOL_MIN_VERSION}..=${WIRE_PROTOCOL_MAX_VERSION}]).`,
+    `Backend: ${backendName} ${backendVersion} (supports protocol ${backendProtocol}).`,
+    'Remediation: rebuild or reinstall the VS Code extension and the soroban-debug backend so they come from the same revision.',
+    extraLine
+  ].filter((line) => line.length > 0).join('\n');
 }
 
 type DebugRequest =
@@ -122,13 +184,6 @@ class RequestAbortedError extends Error {
   }
 }
 
-class RequestTimeoutError extends Error {
-  name = 'TimeoutError';
-  constructor(message = 'Request timed out') {
-    super(message);
-  }
-}
-
 export class DebuggerProcess {
   private childProcess: ChildProcess | null = null;
   private socket: net.Socket | null = null;
@@ -164,7 +219,7 @@ export class DebuggerProcess {
     }
 
     const shouldSpawnServer = this.config.spawnServer !== false;
-    const binaryPath = shouldSpawnServer ? this.resolveBinaryPath() : null;
+    const binaryPath = shouldSpawnServer ? resolveDebuggerBinaryPath(this.config) : null;
     const port = this.config.port ?? await this.findAvailablePort();
     this.port = port;
 
@@ -176,7 +231,7 @@ export class DebuggerProcess {
           ...(this.config.trace ? { RUST_LOG: 'debug' } : {})
         }
       });
-      this.process = child;
+      this.childProcess = child;
 
       child.once('exit', () => {
         this.rejectPendingRequests(new Error('Debugger server exited'));
@@ -187,6 +242,7 @@ export class DebuggerProcess {
       throw new Error('DebuggerProcessConfig.port is required when spawnServer is false');
     }
 
+    try {
       await this.waitForServer(port);
       this.logManager?.log(LogLevel.Info, LogPhase.Connect, `Connecting to debugger server on port ${port}...`);
       await this.connect(port);
@@ -624,7 +680,9 @@ export class DebuggerProcess {
       let timeout: NodeJS.Timeout | undefined;
       let abortHandler: (() => void) | undefined;
 
-      if (options?.timeoutMs && options.timeoutMs > 0) {
+      const timeoutMs = options?.timeoutMs ?? this.defaultRequestTimeoutMs;
+
+      if (timeoutMs > 0) {
         timeout = setTimeout(() => {
           const pending = this.pendingRequests.get(id);
           if (!pending) {
@@ -632,8 +690,8 @@ export class DebuggerProcess {
           }
           this.pendingRequests.delete(id);
           pending.cleanup();
-          pending.reject(new RequestTimeoutError());
-        }, options.timeoutMs);
+          pending.reject(new DebuggerTimeoutError(request.type, timeoutMs));
+        }, timeoutMs);
       }
 
       if (options?.signal) {

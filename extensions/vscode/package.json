@@ -24,10 +24,18 @@
     "smart-contract"
   ],
   "activationEvents": [
-    "onDebugResolve:soroban"
+    "onDebugResolve:soroban",
+    "onCommand:soroban-debugger.runLaunchPreflight"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "soroban-debugger.runLaunchPreflight",
+        "title": "Soroban: Run Launch Preflight",
+        "category": "Soroban"
+      }
+    ],
     "configuration": {
       "title": "Soroban Debugger",
       "properties": {
