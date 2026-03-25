@@ -1,5 +1,5 @@
 use crate::analyzer::upgrade::{CompatibilityReport, ExecutionDiff, UpgradeAnalyzer};
-use crate::analyzer::{security::SecurityAnalyzer, symbolic::SymbolicAnalyzer};
+use crate::analyzer::{security::{AnalyzerFilter, SecurityAnalyzer, Severity}, symbolic::SymbolicAnalyzer};
 use crate::cli::args::{
     AnalyzeArgs, CompareArgs, InspectArgs, InteractiveArgs, OptimizeArgs, ProfileArgs, RemoteArgs,
     ReplArgs, ReplayArgs, RunArgs, ScenarioArgs, ServerArgs, SymbolicArgs, TuiArgs,
@@ -2130,11 +2130,31 @@ pub fn analyze(args: AnalyzeArgs, _verbosity: Verbosity) -> Result<()> {
         }
     }
 
+    let min_severity = match args.min_severity.to_lowercase().as_str() {
+        "high" => Severity::High,
+        "medium" => Severity::Medium,
+        "low" => Severity::Low,
+        other => {
+            return Err(DebuggerError::InvalidArguments(format!(
+                "Invalid min-severity '{}'. Use 'low', 'medium', or 'high'.",
+                other
+            ))
+            .into());
+        }
+    };
+
+    let filter = AnalyzerFilter {
+        enable_rules: args.enable_rule,
+        disable_rules: args.disable_rule,
+        min_severity,
+    };
+
     let analyzer = SecurityAnalyzer::new();
     let report = analyzer.analyze(
         &wasm_file.bytes,
         executor.as_ref(),
         trace_entries.as_deref(),
+        &filter,
     )?;
     let output = AnalyzeCommandOutput {
         findings: report.findings,

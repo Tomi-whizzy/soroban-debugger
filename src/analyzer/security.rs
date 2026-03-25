@@ -6,11 +6,24 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use wasmparser::{Operator, Parser, Payload};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Severity {
     Low,
     Medium,
     High,
+}
+
+impl Default for Severity {
+    fn default() -> Self {
+        Severity::Low
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct AnalyzerFilter {
+    pub enable_rules: Vec<String>,
+    pub disable_rules: Vec<String>,
+    pub min_severity: Severity,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,16 +82,34 @@ impl SecurityAnalyzer {
         wasm_bytes: &[u8],
         executor: Option<&ContractExecutor>,
         trace: Option<&[DynamicTraceEvent]>,
+        filter: &AnalyzerFilter,
     ) -> Result<SecurityReport> {
         let mut report = SecurityReport::default();
 
         for rule in &self.rules {
+            let name = rule.name();
+            
+            if !filter.enable_rules.is_empty() && !filter.enable_rules.iter().any(|r| r == name) {
+                continue;
+            }
+            if filter.disable_rules.iter().any(|r| r == name) {
+                continue;
+            }
+
             let static_findings = rule.analyze_static(wasm_bytes)?;
-            report.findings.extend(static_findings);
+            report.findings.extend(
+                static_findings
+                    .into_iter()
+                    .filter(|f| f.severity >= filter.min_severity),
+            );
 
             if let Some(tr) = trace {
                 let dynamic_findings = rule.analyze_dynamic(executor, tr)?;
-                report.findings.extend(dynamic_findings);
+                report.findings.extend(
+                    dynamic_findings
+                        .into_iter()
+                        .filter(|f| f.severity >= filter.min_severity),
+                );
             }
         }
 
@@ -688,26 +719,12 @@ fn analyze_unbounded_iteration_static(wasm_bytes: &[u8]) -> UnboundedStaticSigna
     signal.rationale = Some(format!(
         "Storage calls in loops: {}, max nesting depth: {}, loop types with calls: {:?}",
         storage_calls_in_loops, signal.max_nesting_depth, loop_types_with_calls
-    );
+    ));
 
-    signal.confidence = Some(FindingConfidence {
-        level: confidence_level,
-        rationale: confidence_rationale,
-    });
+    signal.confidence = Some(confidence);
 
-    signal.context = Some(FindingContext {
-        control_flow_info: Some(ControlFlowContext {
-            loop_types: signal.loop_types.clone(),
-            block_types: vec!["block".to_string()],
-            conditional_branches,
-        }),
-        storage_call_pattern: Some(StorageCallPattern {
-            calls_in_loops: storage_calls_in_loops,
-            calls_outside_loops: storage_calls_outside_loops,
-            loop_types_with_calls: loop_types_with_calls.into_iter().collect(),
-        }),
-        loop_nesting_depth: Some(signal.max_nesting_depth),
-    });
+    signal.suspicious = storage_calls_in_loops > 0;
+    signal
 
     signal.suspicious = storage_calls_in_loops > 0;
     signal
@@ -741,7 +758,9 @@ fn is_storage_read_import(module: &str, name: &str) -> bool {
             return true;
         }
         if n.starts_with(base) {
-            let suffix = &n[base.len()..];
+            let _suffix = &n[base.len()..];
+        }
+        
         if let Some(suffix) = n.strip_prefix(base) {
             if suffix.is_empty() {
                 return true;
@@ -752,6 +771,7 @@ fn is_storage_read_import(module: &str, name: &str) -> bool {
                 }
             }
         }
+        
         // Handle prefix-qualified names like "contract_storage_get".
         if n.ends_with(base) {
             return true;

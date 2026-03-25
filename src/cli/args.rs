@@ -1112,6 +1112,18 @@ pub struct AnalyzeArgs {
     /// Output format (text, json)
     #[arg(long, default_value = "text")]
     pub format: String,
+
+    /// Filter rules to enable (can be specified multiple times)
+    #[arg(long, value_name = "RULE_ID")]
+    pub enable_rule: Vec<String>,
+
+    /// Filter rules to disable (can be specified multiple times)
+    #[arg(long, value_name = "RULE_ID")]
+    pub disable_rule: Vec<String>,
+
+    /// Minimum finding severity to report (low, medium, high)
+    #[arg(long, default_value = "low")]
+    pub min_severity: String,
 }
 
 #[derive(Parser)]
