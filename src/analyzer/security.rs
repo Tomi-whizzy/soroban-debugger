@@ -6,11 +6,24 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use wasmparser::{Operator, Parser, Payload};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Severity {
     Low,
     Medium,
     High,
+}
+
+impl Default for Severity {
+    fn default() -> Self {
+        Severity::Low
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct AnalyzerFilter {
+    pub enable_rules: Vec<String>,
+    pub disable_rules: Vec<String>,
+    pub min_severity: Severity,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,16 +82,34 @@ impl SecurityAnalyzer {
         wasm_bytes: &[u8],
         executor: Option<&ContractExecutor>,
         trace: Option<&[DynamicTraceEvent]>,
+        filter: &AnalyzerFilter,
     ) -> Result<SecurityReport> {
         let mut report = SecurityReport::default();
 
         for rule in &self.rules {
+            let name = rule.name();
+            
+            if !filter.enable_rules.is_empty() && !filter.enable_rules.iter().any(|r| r == name) {
+                continue;
+            }
+            if filter.disable_rules.iter().any(|r| r == name) {
+                continue;
+            }
+
             let static_findings = rule.analyze_static(wasm_bytes)?;
-            report.findings.extend(static_findings);
+            report.findings.extend(
+                static_findings
+                    .into_iter()
+                    .filter(|f| f.severity >= filter.min_severity),
+            );
 
             if let Some(tr) = trace {
                 let dynamic_findings = rule.analyze_dynamic(executor, tr)?;
-                report.findings.extend(dynamic_findings);
+                report.findings.extend(
+                    dynamic_findings
+                        .into_iter()
+                        .filter(|f| f.severity >= filter.min_severity),
+                );
             }
         }
 
@@ -708,6 +739,11 @@ fn is_storage_read_import(module: &str, name: &str) -> bool {
                     return true;
                 }
             }
+        }
+        
+        // Handle prefix-qualified names like "contract_storage_get".
+        if n.ends_with(base) {
+            return true;
         }
     }
 
