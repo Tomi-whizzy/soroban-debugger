@@ -40,32 +40,24 @@ soroban-debug inspect --contract mycontract.wasm --functions --format json
 
 ```json
 {
-  "file": "mycontract.wasm",
-  "exported_functions": [
-    {
-      "name": "initialize",
-      "params": [
-        {
-          "name": "admin",
-          "type": "Address"
-        }
-      ]
-    },
-    {
-      "name": "get_value",
-      "params": [],
-      "return_type": "i64"
-    },
-    {
-      "name": "set_value",
-      "params": [
-        {
-          "name": "new_val",
-          "type": "i64"
-        }
-      ]
-    }
-  ]
+  "schema_version": "1.0.0",
+  "command": "inspect",
+  "status": "success",
+  "result": {
+    "contract": "mycontract.wasm",
+    "size_bytes": 12345,
+    "types": 12,
+    "functions": 25,
+    "exports": 5,
+    "exported_functions": [
+      {
+        "name": "initialize",
+        "params": ["admin: Address"],
+        "return_type": "()"
+      }
+    ]
+  },
+  "error": null
 }
 ```
 
@@ -139,18 +131,12 @@ The JSON output for functions follows this schema:
 
 ```json
 {
-  "file": "string (path to WASM file)",
-  "exported_functions": [
-    {
-      "name": "string (function name)",
-      "params": [
-        {
-          "name": "string (parameter name)",
-          "type": "string (parameter type)"
-        }
-      ],
-      "return_type": "string (optional, omitted if no return or return type is Void)"
-    }
-  ]
+  "schema_version": "1.0.0",
+  "command": "inspect",
+  "status": "success|error",
+  "result": "object|null",
+  "error": {
+    "message": "string"
+  }
 }
 ```

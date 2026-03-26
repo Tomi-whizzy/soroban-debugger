@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UpgradeCheckCommandOutputEnvelope",
+  "type": "object",
+  "required": ["schema_version", "command", "status", "result", "error"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "command": { "type": "string", "const": "upgrade-check" },
+    "status": { "type": "string", "enum": ["success", "error"] },
+    "result": { "type": ["object", "null"] },
+    "error": {
+      "type": ["object", "null"],
+      "properties": {
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

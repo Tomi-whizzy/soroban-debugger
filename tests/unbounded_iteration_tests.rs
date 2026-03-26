@@ -1,7 +1,6 @@
 use soroban_debugger::analyzer::security::{AnalyzerFilter, SecurityAnalyzer};
 use soroban_debugger::server::protocol::{DynamicTraceEvent, DynamicTraceEventKind};
 
-
 fn uleb128(mut value: usize) -> Vec<u8> {
     let mut out = Vec::new();
     loop {
@@ -196,7 +195,9 @@ fn make_wasm_with_storage_outside_loop() -> Vec<u8> {
 fn has_unbounded_iteration_finding(wasm: &[u8]) -> bool {
     let analyzer = SecurityAnalyzer::new();
     let filter = AnalyzerFilter::default();
-    let report = analyzer.analyze(wasm, None, None, &filter).expect("analysis failed");
+    let report = analyzer
+        .analyze(wasm, None, None, &filter)
+        .expect("analysis failed");
     report
         .findings
         .iter()
@@ -208,7 +209,9 @@ fn get_unbounded_iteration_finding(
 ) -> Option<soroban_debugger::analyzer::security::SecurityFinding> {
     let analyzer = SecurityAnalyzer::new();
     let filter = AnalyzerFilter::default();
-    let report = analyzer.analyze(wasm, None, None, &filter).expect("analysis failed");
+    let report = analyzer
+        .analyze(wasm, None, None, &filter)
+        .expect("analysis failed");
     report
         .findings
         .into_iter()
@@ -228,7 +231,7 @@ fn detects_storage_call_in_simple_loop() {
 
     // Check confidence score is valid
     let confidence = finding.confidence.unwrap_or(0.0);
-    assert!(confidence >= 0.0 && confidence <= 1.0);
+    assert!((0.0..=1.0).contains(&confidence));
     assert!(finding.description.contains("storage-read host calls"));
 }
 
@@ -313,7 +316,8 @@ fn dynamic_analysis_detects_high_storage_pressure() {
             function: None,
             storage_key: Some(format!("key_{}", i % 10)), // Only 10 unique keys
             storage_value: None,
-            call_depth: None,
+            call_depth: 0,
+            address: None,
         });
     }
 
@@ -358,7 +362,8 @@ fn dynamic_analysis_ignores_reasonable_storage_access() {
             function: None,
             storage_key: Some(format!("key_{}", i)), // 10 unique keys
             storage_value: None,
-            call_depth: None,
+            call_depth: 0,
+            address: None,
         });
     }
 

@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AnalyzeCommandOutputEnvelope",
+  "type": "object",
+  "required": ["schema_version", "command", "status", "result", "error"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "command": { "type": "string", "const": "analyze" },
+    "status": { "type": "string", "enum": ["success", "error"] },
+    "result": {
+      "type": ["object", "null"],
+      "properties": {
+        "findings": { "type": "array" },
+        "dynamic_analysis": { "type": ["object", "null"] },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "error": {
+      "type": ["object", "null"],
+      "properties": {
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

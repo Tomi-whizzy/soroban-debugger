@@ -523,9 +523,10 @@ impl ContractExecutor {
                 message: format!("storage:{}:{}", access.sequence, access.key),
                 caller: None,
                 function: None,
-                call_depth: None,
+                call_depth: 0,
                 storage_key: Some(access.key.clone()),
                 storage_value: value,
+                address: None,
             });
         }
 
@@ -536,9 +537,10 @@ impl ContractExecutor {
                 message: format!("{} -> {}", call.caller, call.callee),
                 caller: Some(call.caller.clone()),
                 function: Some(call.callee.clone()),
-                call_depth: Some(call.depth as u64),
+                call_depth: call.depth as u64,
                 storage_key: None,
                 storage_value: None,
+                address: None,
             });
         }
 
@@ -551,9 +553,10 @@ impl ContractExecutor {
                 message,
                 caller: None,
                 function: None,
-                call_depth: None,
+                call_depth: 0,
                 storage_key: None,
                 storage_value: None,
+                address: None,
             });
             next_sequence += 1;
         }

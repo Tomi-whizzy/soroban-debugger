@@ -1,6 +1,6 @@
-use crate::analyzer::upgrade::{CompatibilityReport, ExecutionDiff, UpgradeAnalyzer};
 use crate::analyzer::security::{AnalyzerFilter, SecurityAnalyzer, Severity};
 use crate::analyzer::symbolic::{SymbolicAnalyzer, SymbolicConfig};
+use crate::analyzer::upgrade::{CompatibilityReport, ExecutionDiff, UpgradeAnalyzer};
 use crate::cli::args::{
     AnalyzeArgs, CompareArgs, HistoryPruneArgs, InspectArgs, InteractiveArgs, OptimizeArgs,
     ProfileArgs, RemoteArgs, ReplArgs, ReplayArgs, RunArgs, ScenarioArgs, ServerArgs, SymbolicArgs,
@@ -11,7 +11,7 @@ use crate::debugger::instruction_pointer::StepMode;
 use crate::history::{HistoryManager, PruneReport, RetentionPolicy, RunHistory};
 use crate::inspector::events::{ContractEvent, EventInspector};
 use crate::logging;
-use crate::output::OutputWriter;
+use crate::output::{OutputWriter, VersionedOutput};
 use crate::repeat::RepeatRunner;
 use crate::repl::ReplConfig;
 use crate::runtime::executor::ContractExecutor;
@@ -78,6 +78,39 @@ struct AnalyzeCommandOutput {
     warnings: Vec<String>,
 }
 
+#[derive(serde::Serialize)]
+struct RunJsonResult {
+    result: String,
+    sha256: String,
+    budget: RunJsonBudget,
+    storage_diff: crate::inspector::storage::StorageDiff,
+    events: Vec<ContractEvent>,
+    auth: Vec<crate::inspector::auth::AuthNode>,
+    mock_calls: Vec<RunMockCall>,
+    ledger_entries: Option<serde_json::Value>,
+}
+
+#[derive(serde::Serialize)]
+struct RunMockCall {
+    contract_id: String,
+    function: String,
+    args_count: usize,
+    mocked: bool,
+    returned: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct RunJsonBudget {
+    cpu_instructions: u64,
+    memory_bytes: u64,
+}
+
+#[derive(serde::Serialize)]
+struct BatchRunJsonResultRef<'a> {
+    results: &'a [crate::batch::BatchResult],
+    summary: &'a crate::batch::BatchSummary,
+}
+
 fn render_symbolic_report(report: &crate::analyzer::symbolic::SymbolicReport) -> String {
     let mut lines = vec![
         format!("Function: {}", report.function),
@@ -99,9 +132,8 @@ fn render_symbolic_report(report: &crate::analyzer::symbolic::SymbolicReport) ->
             "Replay token: {} (reproduce with --replay {})",
             seed, seed
         )),
-        None => lines.push(
-            "Replay token: none (add --seed <N> to lock the exploration order)".to_string(),
-        ),
+        None => lines
+            .push("Replay token: none (add --seed <N> to lock the exploration order)".to_string()),
     }
 
     if report.paths.is_empty() {
@@ -432,10 +464,13 @@ fn run_batch(args: &RunArgs, batch_file: &std::path::Path) -> Result<()> {
     crate::batch::BatchExecutor::display_results(&results, &summary);
 
     if args.is_json_output() {
-        let output = serde_json::json!({
-            "results": results,
-            "summary": summary,
-        });
+        let output = VersionedOutput::success(
+            "run",
+            BatchRunJsonResultRef {
+                results: &results,
+                summary: &summary,
+            },
+        );
         logging::log_display(
             serde_json::to_string_pretty(&output).map_err(|e| {
                 DebuggerError::FileError(format!("Failed to serialize output: {}", e))
@@ -470,7 +505,10 @@ fn run_remote(args: &RunArgs, output_writer: &mut OutputWriter, remote_addr: &st
     }
 
     if let Some(snapshot_path) = &args.network_snapshot {
-        print_info(format!("Loading network snapshot on remote: {:?}", snapshot_path));
+        print_info(format!(
+            "Loading network snapshot on remote: {:?}",
+            snapshot_path
+        ));
         client.load_snapshot(&snapshot_path.to_string_lossy())?;
     }
 
@@ -502,14 +540,14 @@ fn run_remote(args: &RunArgs, output_writer: &mut OutputWriter, remote_addr: &st
 
     print_info("\n--- Remote Execution Start ---\n");
     let storage_before_str = client.get_storage()?;
-    let storage_before: std::collections::HashMap<String, String> = serde_json::from_str(&storage_before_str)
-        .unwrap_or_default();
+    let storage_before: std::collections::HashMap<String, String> =
+        serde_json::from_str(&storage_before_str).unwrap_or_default();
 
     let result = client.execute(&function, parsed_args.as_deref())?;
 
     let storage_after_str = client.get_storage()?;
-    let storage_after: std::collections::HashMap<String, String> = serde_json::from_str(&storage_after_str)
-        .unwrap_or_default();
+    let storage_after: std::collections::HashMap<String, String> =
+        serde_json::from_str(&storage_after_str).unwrap_or_default();
 
     let (cpu, mem) = client.get_budget()?;
 
@@ -519,7 +557,7 @@ fn run_remote(args: &RunArgs, output_writer: &mut OutputWriter, remote_addr: &st
     let storage_diff = crate::inspector::storage::StorageInspector::compute_diff(
         &storage_before,
         &storage_after,
-        &args.alert_on_change
+        &args.alert_on_change,
     );
     if !storage_diff.is_empty() || !args.alert_on_change.is_empty() {
         print_info("\n--- Storage Changes ---");
@@ -527,23 +565,30 @@ fn run_remote(args: &RunArgs, output_writer: &mut OutputWriter, remote_addr: &st
     }
 
     if args.is_json_output() {
-        let output = serde_json::json!({
-            "status": "success",
-            "result": result,
-            "budget": {
-                "cpu_instructions": cpu,
-                "memory_bytes": mem,
+        let output = VersionedOutput::success(
+            "run",
+            RunJsonResult {
+                result,
+                sha256: String::new(),
+                budget: RunJsonBudget {
+                    cpu_instructions: cpu,
+                    memory_bytes: mem,
+                },
+                storage_diff,
+                events: Vec::new(),
+                auth: Vec::new(),
+                mock_calls: Vec::new(),
+                ledger_entries: None,
             },
-            "storage_diff": storage_diff,
-        });
+        );
         match serde_json::to_string_pretty(&output) {
             Ok(json) => println!("{}", json),
             Err(e) => {
-                let err_out = serde_json::json!({
-                    "status": "error",
-                    "errors": [e.to_string()]
-                });
-                println!("{}", serde_json::to_string_pretty(&err_out).unwrap_or_default());
+                let err_out = VersionedOutput::<serde_json::Value>::error("run", e.to_string());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&err_out).unwrap_or_default()
+                );
             }
         }
     }
@@ -942,50 +987,39 @@ pub fn run(args: RunArgs, verbosity: Verbosity) -> Result<()> {
     }
 
     if args.is_json_output() {
-        let mut output = serde_json::json!({
-            "status": "success",
-            "result": result,
-            "sha256": wasm_hash,
-            "budget": {
-                "cpu_instructions": budget.cpu_instructions,
-                "memory_bytes": budget.memory_bytes,
-            },
-            "storage_diff": storage_diff,
-        });
-
-        if let Some(ref events) = json_events {
-            output["events"] = EventInspector::to_json_value(events);
-        }
-        if let Some(auth_tree) = json_auth {
-            output["auth"] = crate::inspector::auth::AuthInspector::to_json_value(&auth_tree);
-        }
-        if !mock_calls.is_empty() {
-            output["mock_calls"] = serde_json::Value::Array(
-                mock_calls
+        let output = VersionedOutput::success(
+            "run",
+            RunJsonResult {
+                result: result.clone(),
+                sha256: wasm_hash,
+                budget: RunJsonBudget {
+                    cpu_instructions: budget.cpu_instructions,
+                    memory_bytes: budget.memory_bytes,
+                },
+                storage_diff,
+                events: json_events.clone().unwrap_or_default(),
+                auth: json_auth.unwrap_or_default(),
+                mock_calls: mock_calls
                     .iter()
-                    .map(|entry| {
-                        serde_json::json!({
-                            "contract_id": entry.contract_id,
-                            "function": entry.function,
-                            "args_count": entry.args_count,
-                            "mocked": entry.mocked,
-                            "returned": entry.returned,
-                        })
+                    .map(|entry| RunMockCall {
+                        contract_id: entry.contract_id.clone(),
+                        function: entry.function.clone(),
+                        args_count: entry.args_count,
+                        mocked: entry.mocked,
+                        returned: entry.returned.clone(),
                     })
                     .collect(),
-            );
-        }
-        if let Some(ref ledger) = json_ledger {
-            output["ledger_entries"] = ledger.to_json();
-        }
+                ledger_entries: json_ledger.as_ref().map(|ledger| ledger.to_json()),
+            },
+        );
 
         match serde_json::to_string_pretty(&output) {
             Ok(json) => println!("{}", json),
             Err(e) => {
-                let err_output = serde_json::json!({
-                    "status": "error",
-                    "errors": [format!("Failed to serialize output: {}", e)]
-                });
+                let err_output = VersionedOutput::<serde_json::Value>::error(
+                    "run",
+                    format!("Failed to serialize output: {}", e),
+                );
                 if let Ok(err_json) = serde_json::to_string_pretty(&err_output) {
                     println!("{}", err_json);
                 }
@@ -1226,11 +1260,16 @@ fn display_instruction_counts(counts: &crate::runtime::executor::InstructionCoun
 
 /// Execute the upgrade-check command
 pub fn upgrade_check(args: UpgradeCheckArgs) -> Result<()> {
-    println!("Loading old contract: {:?}", args.old);
+    let json_output = args.output.eq_ignore_ascii_case("json");
+    if !json_output {
+        println!("Loading old contract: {:?}", args.old);
+    }
     let old_wasm = fs::read(&args.old)
         .map_err(|e| miette::miette!("Failed to read old WASM file {:?}: {}", args.old, e))?;
 
-    println!("Loading new contract: {:?}", args.new);
+    if !json_output {
+        println!("Loading new contract: {:?}", args.new);
+    }
     let new_wasm = fs::read(&args.new)
         .map_err(|e| miette::miette!("Failed to read new WASM file {:?}: {}", args.new, e))?;
 
@@ -1248,8 +1287,11 @@ pub fn upgrade_check(args: UpgradeCheckArgs) -> Result<()> {
         UpgradeAnalyzer::analyze(&old_wasm, &new_wasm, &old_path, &new_path, execution_diffs)?;
 
     let output = match args.output.as_str() {
-        "json" => serde_json::to_string_pretty(&report)
-            .map_err(|e| miette::miette!("Failed to serialize report: {}", e))?,
+        "json" => {
+            let wrapped = VersionedOutput::success("upgrade-check", &report);
+            serde_json::to_string_pretty(&wrapped)
+                .map_err(|e| miette::miette!("Failed to serialize report: {}", e))?
+        }
         _ => format_text_report(&report),
     };
 
@@ -1806,7 +1848,8 @@ pub fn replay(args: ReplayArgs, verbosity: Verbosity) -> Result<()> {
 
     // Compare results
     print_info("\n--- Comparison ---");
-    let report = crate::compare::CompareEngine::compare(&truncated_original, &replayed_trace, args.context);
+    let report =
+        crate::compare::CompareEngine::compare(&truncated_original, &replayed_trace, args.context);
     let rendered = crate::compare::CompareEngine::render_report(&report);
 
     if let Some(output_path) = &args.output {
@@ -2045,6 +2088,62 @@ pub fn inspect(args: InspectArgs, _verbosity: Verbosity) -> Result<()> {
     let bytes = fs::read(&args.contract)
         .map_err(|e| miette::miette!("Failed to read contract {:?}: {}", args.contract, e))?;
     let info = crate::utils::wasm::get_module_info(&bytes)?;
+    if matches!(args.format, crate::cli::args::OutputFormat::Json) {
+        #[derive(serde::Serialize)]
+        struct InspectFunction {
+            name: String,
+            params: Vec<String>,
+            return_type: String,
+        }
+        #[derive(serde::Serialize)]
+        struct InspectJsonResult {
+            contract: String,
+            size_bytes: usize,
+            types: usize,
+            functions: usize,
+            exports: usize,
+            exported_functions: Option<Vec<InspectFunction>>,
+        }
+
+        let exported_functions = if args.functions {
+            let sigs = crate::utils::wasm::parse_function_signatures(&bytes)?;
+            Some(
+                sigs.iter()
+                    .map(|sig| InspectFunction {
+                        name: sig.name.clone(),
+                        params: sig
+                            .params
+                            .iter()
+                            .map(|p| format!("{}: {}", p.name, p.type_name))
+                            .collect(),
+                        return_type: sig.return_type.clone().unwrap_or_else(|| "()".to_string()),
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        let output = VersionedOutput::success(
+            "inspect",
+            InspectJsonResult {
+                contract: args.contract.to_string_lossy().to_string(),
+                size_bytes: info.total_size,
+                types: info.type_count as usize,
+                functions: info.function_count as usize,
+                exports: info.export_count as usize,
+                exported_functions,
+            },
+        );
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output)
+                .map_err(|e| miette::miette!("Failed to serialize inspect JSON output: {}", e))?
+        );
+        return Ok(());
+    }
+
     println!("Contract: {:?}", args.contract);
     println!("Size: {} bytes", info.total_size);
     println!("Types: {}", info.type_count);
@@ -2176,9 +2275,11 @@ pub fn analyze(args: AnalyzeArgs, _verbosity: Verbosity) -> Result<()> {
         "text" => println!("{}", render_security_report(&output)),
         "json" => println!(
             "{}",
-            serde_json::to_string_pretty(&output).map_err(|e| {
-                DebuggerError::FileError(format!("Failed to serialize analysis output: {}", e))
-            })?
+            serde_json::to_string_pretty(&VersionedOutput::success("analyze", output)).map_err(
+                |e| {
+                    DebuggerError::FileError(format!("Failed to serialize analysis output: {}", e))
+                },
+            )?
         ),
         other => {
             return Err(DebuggerError::InvalidArguments(format!(
@@ -2297,19 +2398,6 @@ pub fn show_budget_trend(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn budget_trend_stats_or_err_returns_error_instead_of_panicking() {
-        let empty: Vec<RunHistory> = Vec::new();
-        let err = budget_trend_stats_or_err(&empty).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("Failed to compute budget trend statistics"));
-    }
-}
-
 /// Prune or compact run history according to a retention policy.
 ///
 /// `global_policy` is built from the top-level `--history-max-records` /
@@ -2344,11 +2432,26 @@ pub fn history_prune(args: HistoryPruneArgs, global_policy: RetentionPolicy) -> 
     } else {
         let PruneReport { removed, remaining } = manager.prune_history(&policy)?;
         if removed == 0 {
-            println!("History is within the retention limit. Nothing removed ({remaining} records).");
+            println!(
+                "History is within the retention limit. Nothing removed ({remaining} records)."
+            );
         } else {
             println!("Removed {removed} record(s). {remaining} record(s) remaining.");
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn budget_trend_stats_or_err_returns_error_instead_of_panicking() {
+        let empty: Vec<RunHistory> = Vec::new();
+        let err = budget_trend_stats_or_err(&empty).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Failed to compute budget trend statistics"));
+    }
 }

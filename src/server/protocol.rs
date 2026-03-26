@@ -96,9 +96,14 @@ pub struct DynamicTraceEvent {
     pub message: String,
     pub caller: Option<String>,
     pub function: Option<String>,
-    pub call_depth: Option<u64>,
+    pub call_depth: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_value: Option<String>,
+    /// Actor address associated with this event (e.g., the address being authorized).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
 }
 
 /// Source location information (file, line, column)
@@ -393,10 +398,29 @@ impl DebugMessage {
     /// Parse a JSON string into a DebugMessage with field-aware error reporting.
     pub fn parse(json: &str) -> std::result::Result<Self, String> {
         let deserializer = &mut serde_json::Deserializer::from_str(json);
-        serde_path_to_error::deserialize(deserializer).map_err(|e| {
-            format!("Protocol error at '{}': {}", e.path(), e.inner())
-        })
+        serde_path_to_error::deserialize(deserializer)
+            .map_err(|e| format!("Protocol error at '{}': {}", e.path(), e.inner()))
     }
+}
+
+use tokio::io::AsyncWriteExt;
+
+/// Helper to send a response to a writer
+pub async fn send_response<S>(
+    writer: &mut S,
+    response: DebugMessage,
+) -> std::result::Result<(), String>
+where
+    S: tokio::io::AsyncWrite + Unpin,
+{
+    let json = serde_json::to_string(&response).map_err(|e| e.to_string())?;
+    writer
+        .write_all(json.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+    writer.write_all(b"\n").await.map_err(|e| e.to_string())?;
+    writer.flush().await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -471,7 +495,11 @@ mod tests {
             }
         }"#;
         let err = DebugMessage::parse(json).unwrap_err();
-        assert!(err.contains("client_version"), "Error should mention missing field: {}", err);
+        assert!(
+            err.contains("client_version"),
+            "Error should mention missing field: {}",
+            err
+        );
     }
 
     #[test]
@@ -498,24 +526,4 @@ mod tests {
         let event: DynamicTraceEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.call_depth, Some(5));
     }
-}
-
-use tokio::io::AsyncWriteExt;
-
-/// Helper to send a response to a writer
-pub async fn send_response<S>(writer: &mut S, response: DebugMessage) -> std::result::Result<(), String>
-where
-    S: tokio::io::AsyncWrite + Unpin,
-{
-    let json = serde_json::to_string(&response).map_err(|e| e.to_string())?;
-    writer
-        .write_all(json.as_bytes())
-        .await
-        .map_err(|e| e.to_string())?;
-    writer
-        .write_all(b"\n")
-        .await
-        .map_err(|e| e.to_string())?;
-    writer.flush().await.map_err(|e| e.to_string())?;
-    Ok(())
 }

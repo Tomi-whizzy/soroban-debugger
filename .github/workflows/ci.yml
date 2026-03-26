@@ -70,20 +70,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build soroban-debug (backend)
-        run: cargo build --bin soroban-debug
-
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+      # Using our new Makefile target here
+      - name: Build and Test Extension
+        run: make test-vscode
           cache: npm
           cache-dependency-path: extensions/vscode/package-lock.json
 
@@ -102,20 +97,15 @@ jobs:
     needs: check
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-
+      # Using our Makefile targets for consistency
       - name: Check Formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run Clippy (deny warnings)
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: make fmt
+      - name: Run Clippy
+        run: make lint
 
   bench:
     name: Benchmark Regression Check
@@ -158,8 +148,18 @@ jobs:
       - name: Run benchmarks (current)
         run: cargo bench --benches -- --noplot --sample-size $BENCH_SAMPLE_SIZE --measurement-time $BENCH_MEASUREMENT_TIME --warm-up-time $BENCH_WARMUP_TIME
 
-      - name: Record current results (JSON)
-        run: cargo run --quiet --bin bench-regression -- record --criterion target/criterion --out .bench/current.json
+      - name: Add main branch worktree for baseline
+        run: git worktree add /tmp/bench-base main
+
+      - name: Run benchmarks (baseline on main)
+        working-directory: /tmp/bench-base
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo bench -- --save-baseline base --noplot
+
+      - name: Remove main branch worktree
+        if: always()
+        run: git worktree remove --force /tmp/bench-base || true
 
       - name: Compare against baseline (pass/warn/fail)
         if: github.event_name == 'pull_request'
@@ -202,21 +202,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-manpages-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-manpages-
-
       - name: Check man pages are up to date
         run: make check-man
 
@@ -242,31 +229,32 @@ jobs:
       - name: Check coverage threshold
         id: coverage
         run: |
-          # Generate summary and extract coverage percentage
-          summary=$(cargo llvm-cov --workspace --all-features --summary-only 2>&1)
-          echo "$summary"
-          
-          # Extract coverage percentage from the summary (look for "TOTAL" line)
-          # Column 4 is the line coverage % in cargo llvm-cov --summary-only output
-          coverage=$(echo "$summary" | grep -iE "^\s*TOTAL" | awk '{print $4}' | sed 's/%//' || echo "0")
-          
-          if [ -z "$coverage" ] || [ "$coverage" = "0" ]; then
-            echo "Warning: Could not extract coverage percentage, continuing..."
-            coverage="0"
+          set -euo pipefail
+
+          # Use JSON output: structured and stable across cargo-llvm-cov versions
+          summary_json=$(cargo llvm-cov --workspace --all-features --json --summary-only 2>&1)
+          echo "$summary_json"
+
+          # Extract line coverage; || true lets us emit a clear error instead of a raw jq failure
+          coverage=$(printf '%s' "$summary_json" | jq -r '.data[0].totals.lines.percent' 2>/dev/null || true)
+
+          if [ -z "$coverage" ] || [ "$coverage" = "null" ]; then
+            echo "ERROR: Failed to extract coverage from cargo-llvm-cov JSON output."
+            echo "Verify that 'cargo llvm-cov --json --summary-only' still emits .data[0].totals.lines.percent"
+            exit 1
           fi
-          
-          echo "Current coverage: ${coverage}%"
+
+          coverage_pct=$(printf "%.2f" "$coverage")
+          echo "Current coverage: ${coverage_pct}%"
           echo "Required threshold: 50%"
-          echo "coverage=${coverage}" >> $GITHUB_OUTPUT
-          
-          # Compare coverage (using awk for floating point comparison)
+          echo "coverage=${coverage_pct}" >> "$GITHUB_OUTPUT"
+
           meets_threshold=$(awk -v cov="$coverage" -v thresh="50" 'BEGIN {print (cov >= thresh)}')
-          
           if [ "$meets_threshold" = "0" ]; then
-            echo "Coverage ${coverage}% is below the required 50% threshold"
+            echo "Coverage ${coverage_pct}% is below the required 50% threshold"
             exit 1
           else
-            echo "Coverage ${coverage}% meets the required 50% threshold"
+            echo "Coverage ${coverage_pct}% meets the required 50% threshold"
           fi
       
       - name: Upload to Codecov

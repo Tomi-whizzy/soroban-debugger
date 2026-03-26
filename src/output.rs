@@ -2,10 +2,63 @@
 //!
 //! Supports `NO_COLOR` (disable ANSI colors) and `--no-unicode` (ASCII-only output).
 
+use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static NO_UNICODE: AtomicBool = AtomicBool::new(false);
 static COLORS_ENABLED: AtomicBool = AtomicBool::new(true);
+pub const SCHEMA_VERSION: &str = "1.0.0";
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OutputStatus {
+    Success,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OutputError {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VersionedOutput<T>
+where
+    T: Serialize,
+{
+    pub schema_version: &'static str,
+    pub command: String,
+    pub status: OutputStatus,
+    pub result: Option<T>,
+    pub error: Option<OutputError>,
+}
+
+impl<T> VersionedOutput<T>
+where
+    T: Serialize,
+{
+    pub fn success(command: impl Into<String>, result: T) -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            command: command.into(),
+            status: OutputStatus::Success,
+            result: Some(result),
+            error: None,
+        }
+    }
+
+    pub fn error(command: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            command: command.into(),
+            status: OutputStatus::Error,
+            result: None,
+            error: Some(OutputError {
+                message: message.into(),
+            }),
+        }
+    }
+}
 
 /// Global output/accessibility configuration.
 pub struct OutputConfig;

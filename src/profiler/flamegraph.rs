@@ -47,11 +47,7 @@ impl FlameGraphGenerator {
                     stacks.push(FlameGraphStack {
                         stack: vec![
                             function.name.clone(),
-                            format!(
-                                "storage;key{};access_count={}",
-                                idx,
-                                access.1.access_count
-                            ),
+                            format!("storage;key{};access_count={}", idx, access.1.access_count),
                         ],
                         count: access_count,
                     });
@@ -73,7 +69,11 @@ impl FlameGraphGenerator {
         output
     }
 
-    pub fn generate_svg(stacks: &[FlameGraphStack], width: usize, _height: usize) -> Result<String> {
+    pub fn generate_svg(
+        stacks: &[FlameGraphStack],
+        width: usize,
+        _height: usize,
+    ) -> Result<String> {
         let collapsed = Self::to_collapsed_stack_format(stacks);
         let reader = std::io::Cursor::new(collapsed);
 
@@ -105,8 +105,7 @@ impl FlameGraphGenerator {
         height: usize,
     ) -> Result<()> {
         let svg = Self::generate_svg(stacks, width, height)?;
-        std::fs::write(path, svg)
-            .map_err(|e| crate::DebuggerError::FileError(e.to_string()))?;
+        std::fs::write(path, svg).map_err(|e| crate::DebuggerError::FileError(e.to_string()))?;
         Ok(())
     }
 }

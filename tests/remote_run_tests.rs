@@ -1,8 +1,8 @@
-use std::time::Duration;
-use std::path::PathBuf;
-use assert_cmd::Command;
 use assert_cmd::cargo::CommandCargoExt;
+use assert_cmd::Command;
 use predicates::prelude::*;
+use std::path::PathBuf;
+use std::time::Duration;
 
 #[test]
 fn test_remote_run_execution() {
@@ -24,12 +24,7 @@ fn test_remote_run_execution() {
         if cfg!(windows) {
             let status = std::process::Command::new("powershell")
                 .current_dir(&fixtures_dir)
-                .args([
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    "build.ps1",
-                ])
+                .args(["-ExecutionPolicy", "Bypass", "-File", "build.ps1"])
                 .status()
                 .expect("Failed to run build.ps1");
             assert!(status.success(), "build.ps1 failed");
@@ -94,10 +89,9 @@ fn test_remote_run_execution() {
 
     // Kill server
     server_child.kill().unwrap();
+    let _ = server_child.wait();
 
     // The counter.wasm might just output 1 on first increment
     // Let's just assert that it executed successfully rather than checking the exact value if we are unsure
-    assert
-        .success()
-        .stdout(predicate::str::contains("Result:"));
+    assert.success().stdout(predicate::str::contains("Result:"));
 }
