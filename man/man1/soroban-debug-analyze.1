@@ -4,7 +4,7 @@
 .SH NAME
 analyze \- Analyze contract for security vulnerabilities
 .SH SYNOPSIS
-\fBanalyze\fR <\fB\-c\fR|\fB\-\-contract\fR> [\fB\-f\fR|\fB\-\-function\fR] [\fB\-a\fR|\fB\-\-args\fR] [\fB\-s\fR|\fB\-\-storage\fR] [\fB\-\-timeout\fR] [\fB\-\-format\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBanalyze\fR <\fB\-c\fR|\fB\-\-contract\fR> [\fB\-f\fR|\fB\-\-function\fR] [\fB\-a\fR|\fB\-\-args\fR] [\fB\-s\fR|\fB\-\-storage\fR] [\fB\-\-timeout\fR] [\fB\-\-format\fR] [\fB\-\-enable\-rule\fR] [\fB\-\-disable\-rule\fR] [\fB\-\-min\-severity\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Analyze contract for security vulnerabilities
 .SH OPTIONS
@@ -26,6 +26,15 @@ Execution timeout in seconds for dynamic analysis (default: 30)
 .TP
 \fB\-\-format\fR \fI<FORMAT>\fR [default: text]
 Output format (text, json)
+.TP
+\fB\-\-enable\-rule\fR \fI<RULE_ID>\fR
+Filter rules to enable (can be specified multiple times)
+.TP
+\fB\-\-disable\-rule\fR \fI<RULE_ID>\fR
+Filter rules to disable (can be specified multiple times)
+.TP
+\fB\-\-min\-severity\fR \fI<MIN_SEVERITY>\fR [default: low]
+Minimum finding severity to report (low, medium, high)
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help

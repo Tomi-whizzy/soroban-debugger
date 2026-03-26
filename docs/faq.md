@@ -177,3 +177,116 @@ ssh -L 9229:localhost:9229 user@remote-host
 Then set `"port": 9229` and `"token": "$MY_TOKEN"` in your `launch.json`. The extension will connect to the tunnel as if the server were local.
 
 For full remote debugging documentation, see [Remote Debugging](remote-debugging.md) and the [Feature Matrix — Remote Debugging](feature-matrix.md#remote-debugging).
+
+---
+
+## History Retention
+
+### 21. The history file keeps growing. How do I limit it?
+
+**Cause:** `soroban-debug` appends one record per `run` invocation. Without a configured limit the history file grows indefinitely.
+
+**Fix:** Use the global `--history-max-records` flag (or its environment variable) to cap how many records are kept:
+
+```bash
+# Keep only the 100 most-recent runs
+soroban-debug --history-max-records 100 run --contract my.wasm --function increment
+
+# Use the env var for a persistent per-shell default
+export SOROBAN_DEBUG_HISTORY_MAX_RECORDS=100
+soroban-debug run --contract my.wasm --function increment
+```
+
+The pruning happens atomically during the append — the same tmp-file-rename mechanism that prevents corruption on normal writes.
+
+---
+
+### 22. How do I drop records that are older than a certain number of days?
+
+Use `--history-max-age-days` (or `SOROBAN_DEBUG_HISTORY_MAX_AGE_DAYS`):
+
+```bash
+# Drop runs older than 30 days on every append
+soroban-debug --history-max-age-days 30 run --contract my.wasm --function increment
+
+# Persist the policy in the environment
+export SOROBAN_DEBUG_HISTORY_MAX_AGE_DAYS=30
+```
+
+Both constraints can be combined — the stricter one wins:
+
+```bash
+# Keep at most 50 records AND discard anything older than 14 days
+soroban-debug \
+  --history-max-records 50 \
+  --history-max-age-days 14 \
+  run --contract my.wasm --function increment
+```
+
+---
+
+### 23. How do I prune or compact the history file without running a contract?
+
+Use the `history-prune` subcommand:
+
+```bash
+# Prune to the 200 most-recent records
+soroban-debug history-prune --max-records 200
+
+# Drop records older than 30 days
+soroban-debug history-prune --max-age-days 30
+
+# Combine: keep newest 200 and drop anything older than 30 days
+soroban-debug history-prune --max-records 200 --max-age-days 30
+```
+
+**Dry-run mode** — preview what would be removed without writing any changes:
+
+```bash
+soroban-debug history-prune --max-records 50 --dry-run
+# [dry-run] Would remove 143 record(s), 50 would remain.
+```
+
+The subcommand also honours the global `--history-file` flag:
+
+```bash
+soroban-debug --history-file /path/to/custom-history.json history-prune --max-records 100
+```
+
+---
+
+### 24. Which records are kept when `--history-max-records` is used?
+
+The **newest** N records (by their parsed `date` field, sorted chronologically) are kept; the oldest are removed. This preserves deterministic ordering for `--budget-trend` regression analysis.
+
+Records whose `date` field cannot be parsed are **kept** rather than silently dropped, to avoid data loss from formatting differences.
+
+---
+
+## Error Hints and JSON Output
+
+### 25. How do I interpret standardized error hints?
+
+The Soroban Debugger provides standardized remediation hints for most common failures. When an error like an incorrect WASM path or a bad port connection occurs, the debugger will print an actionable diagnostic:
+
+**Example:**
+```
+  × Network/transport error: Failed to connect to 127.0.0.1:9000: Connection refused (os error 61)
+  help: Action: Ensure the remote debug server is online, address is correct, and network firewall permits the connection.
+        Context: The transport connection failed to establish or dropped unexpectedly.
+```
+
+If you specify `--json` or set `SOROBAN_DEBUG_JSON=1`, these hints are also securely placed inside a machine-readable `"hints"` array on the output block, allowing your scripts or testing wrappers to automatically process validation suggestions.
+
+```json
+{
+  "status": "error",
+  "errors": [
+    "Authentication failed: Invalid security token"
+  ],
+  "hints": [
+    "Action: Ensure the shared security token matches the server, and the transport protocol is correct.\nContext: The server rejected communication because authentication wasn't verified."
+  ]
+}
+```
+

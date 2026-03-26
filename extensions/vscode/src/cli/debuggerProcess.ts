@@ -72,6 +72,23 @@ export interface LaunchPreflightResult {
   resolvedBinaryPath: string;
 }
 
+export type LaunchLifecyclePhase = 'spawn' | 'connect' | 'authenticate' | 'load' | 'ready';
+export type LaunchLifecycleStatus = 'started' | 'completed' | 'failed';
+
+export interface LaunchLifecycleEvent {
+  phase: LaunchLifecyclePhase;
+  status: LaunchLifecycleStatus;
+  message: string;
+}
+
+export class DebuggerTimeoutError extends Error {
+  name = 'DebuggerTimeoutError';
+
+  constructor(public readonly requestType: string, public readonly timeoutMs: number) {
+    super(`${requestType} timed out after ${timeoutMs}ms`);
+  }
+}
+
 type ProtocolMismatchDetails = {
   extensionVersion: string;
   backendName?: string;
@@ -81,34 +98,22 @@ type ProtocolMismatchDetails = {
   extra?: string;
 };
 
-export class DebuggerTimeoutError extends Error {
-  name = 'TimeoutError';
-
-  constructor(
-    public readonly requestType: string,
-    public readonly timeoutMs: number
-  ) {
-    super(`${requestType} timed out after ${timeoutMs}ms`);
-  }
-}
-
 export function formatProtocolMismatchMessage(details: ProtocolMismatchDetails): string {
-  const backendName = details.backendName ?? 'soroban-debug';
-  const backendVersion = details.backendVersion ?? 'unknown';
-  const backendProtocol = details.backendProtocolMin !== undefined && details.backendProtocolMax !== undefined
-    ? `[${details.backendProtocolMin}..=${details.backendProtocolMax}]`
+  const backendIdentity = details.backendName && details.backendVersion
+    ? `${details.backendName} ${details.backendVersion}`
+    : 'the backend debugger';
+  const backendProtocol = Number.isInteger(details.backendProtocolMin) && Number.isInteger(details.backendProtocolMax)
+    ? `${details.backendProtocolMin}..=${details.backendProtocolMax}`
     : 'unknown';
-
-  const extra = details.extra?.trim();
-  const extraLine = extra ? `\nDetails: ${extra}` : '';
+  const extra = details.extra ? ` Details: ${details.extra}` : '';
 
   return [
-    'Soroban debugger protocol negotiation failed.',
-    `Extension version: ${details.extensionVersion} (supports protocol [${WIRE_PROTOCOL_MIN_VERSION}..=${WIRE_PROTOCOL_MAX_VERSION}]).`,
-    `Backend: ${backendName} ${backendVersion} (supports protocol ${backendProtocol}).`,
-    'Remediation: rebuild or reinstall the VS Code extension and the soroban-debug backend so they come from the same revision.',
-    extraLine
-  ].filter((line) => line.length > 0).join('\n');
+    `Protocol negotiation with ${backendIdentity} failed.`,
+    `Extension version: ${details.extensionVersion}.`,
+    `Backend supports protocol ${backendProtocol}.`,
+    'Remediation: rebuild or update the soroban-debug CLI and the VS Code extension so they come from the same revision.',
+    extra.trim()
+  ].filter(Boolean).join(' ');
 }
 
 type DebugRequest =
@@ -126,6 +131,7 @@ type DebugRequest =
   | { type: 'ClearBreakpoint'; function: string }
   | { type: 'ResolveSourceBreakpoints'; source_path: string; lines: number[]; exported_functions: string[] }
   | { type: 'Evaluate'; expression: string; frame_id?: number }
+  | { type: 'Cancel' }
   | { type: 'Ping' }
   | { type: 'Disconnect' }
   | { type: 'LoadSnapshot'; snapshot_path: string }
@@ -196,10 +202,16 @@ export class DebuggerProcess {
   private negotiatedProtocolVersion: number | null = null;
   private defaultRequestTimeoutMs: number;
   private defaultConnectTimeoutMs: number;
+  private launchLifecycleReporter?: (event: LaunchLifecycleEvent) => void;
 
-  constructor(config: DebuggerProcessConfig, logManager?: LogManager) {
+  constructor(
+    config: DebuggerProcessConfig,
+    logManager?: LogManager,
+    launchLifecycleReporter?: (event: LaunchLifecycleEvent) => void
+  ) {
     this.config = config;
     this.logManager = logManager;
+    this.launchLifecycleReporter = launchLifecycleReporter;
 
     const envRequestTimeout = Number(process.env.SOROBAN_DEBUG_REQUEST_TIMEOUT_MS);
     const envConnectTimeout = Number(process.env.SOROBAN_DEBUG_CONNECT_TIMEOUT_MS);
@@ -213,6 +225,14 @@ export class DebuggerProcess {
       : (Number.isFinite(envConnectTimeout) ? envConnectTimeout : 10_000);
   }
 
+  public cancel(): void {
+    if (!this.childProcess || this.childProcess.killed) return;
+    this.sendRequest({ type: 'Cancel' }).catch(() => {
+      // Ignore network errors since the server dropping the connection
+      // is the expected behavior for an interrupted execution
+    });
+  }
+
   async start(): Promise<void> {
     if (this.childProcess || this.socket) {
       return;
@@ -222,6 +242,7 @@ export class DebuggerProcess {
     const binaryPath = shouldSpawnServer ? resolveDebuggerBinaryPath(this.config) : null;
     const port = this.config.port ?? await this.findAvailablePort();
     this.port = port;
+    let activePhase: LaunchLifecyclePhase = shouldSpawnServer ? 'spawn' : 'connect';
 
     try {
       if (shouldSpawnServer) {
@@ -243,15 +264,31 @@ export class DebuggerProcess {
         throw new Error('DebuggerProcessConfig.port is required when spawnServer is false');
       }
 
-    try {
+      activePhase = 'connect';
+      this.emitLaunchLifecycle({
+        phase: 'connect',
+        status: 'started',
+        message: `Connecting to debugger server on port ${port}...`
+      });
       await this.waitForServer(port);
       this.logManager?.log(LogLevel.Info, LogPhase.Connect, `Connecting to debugger server on port ${port}...`);
       await this.connect(port);
       this.logManager?.log(LogLevel.Info, LogPhase.Connect, 'Connection established. Negotiating protocol...');
       await this.negotiateProtocol();
       this.logManager?.log(LogLevel.Info, LogPhase.Connect, `Protocol negotiated: ${this.negotiatedProtocolVersion || 'unknown'}`);
+      this.emitLaunchLifecycle({
+        phase: 'connect',
+        status: 'completed',
+        message: `Connected to debugger server on port ${port}.`
+      });
 
       if (this.config.token) {
+        activePhase = 'authenticate';
+        this.emitLaunchLifecycle({
+          phase: 'authenticate',
+          status: 'started',
+          message: 'Authenticating debugger session...'
+        });
         this.logManager?.log(LogLevel.Info, LogPhase.Auth, 'Authenticating with token...');
         const response = await this.sendRequest({
           type: 'Authenticate',
@@ -261,8 +298,21 @@ export class DebuggerProcess {
         if (!response.success) {
           throw new Error(response.message);
         }
+        this.emitLaunchLifecycle({
+          phase: 'authenticate',
+          status: 'completed',
+          message: 'Debugger session authenticated.'
+        });
       }
 
+      activePhase = 'load';
+      this.emitLaunchLifecycle({
+        phase: 'load',
+        status: 'started',
+        message: this.config.snapshotPath
+          ? 'Loading snapshot and contract into debugger...'
+          : 'Loading contract into debugger...'
+      });
       if (this.config.snapshotPath) {
         this.logManager?.log(LogLevel.Info, LogPhase.Load, `Loading snapshot: ${this.config.snapshotPath}`);
         const response = await this.sendRequest({
@@ -278,7 +328,23 @@ export class DebuggerProcess {
         contract_path: this.config.contractPath
       });
       this.expectResponse(contractResponse, 'ContractLoaded');
+      this.emitLaunchLifecycle({
+        phase: 'load',
+        status: 'completed',
+        message: 'Snapshot and contract loaded.'
+      });
+      activePhase = 'ready';
+      this.emitLaunchLifecycle({
+        phase: 'ready',
+        status: 'completed',
+        message: 'Debugger is ready.'
+      });
     } catch (error) {
+      this.emitLaunchLifecycle({
+        phase: activePhase,
+        status: 'failed',
+        message: error instanceof Error ? error.message : String(error)
+      });
       await this.stop().catch(() => undefined);
       throw error;
     }
@@ -691,8 +757,8 @@ export class DebuggerProcess {
           }
           this.pendingRequests.delete(id);
           pending.cleanup();
-          pending.reject(new DebuggerTimeoutError(request.type, timeoutMs));
-        }, timeoutMs);
+          pending.reject(new DebuggerTimeoutError(request.type, options.timeoutMs as number));
+        }, options.timeoutMs);
       }
 
       if (options?.signal) {
@@ -786,6 +852,10 @@ export class DebuggerProcess {
     if (response.type !== type) {
       throw new Error(`Unexpected debugger response: expected ${type}, got ${response.type}`);
     }
+  }
+
+  private emitLaunchLifecycle(event: LaunchLifecycleEvent): void {
+    this.launchLifecycleReporter?.(event);
   }
 }
 

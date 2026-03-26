@@ -7,11 +7,7 @@ import {
 } from './cli/debuggerProcess';
 import { SorobanDebugAdapterDescriptorFactory } from './debug/adapter';
 import { LogManager } from './debug/logManager';
-import {
-  fromQuickPickLabel,
-  runLaunchPreflightCommand,
-  toQuickPickLabel
-} from './preflightCommand';
+import { SorobanLaunchProgressReporter } from './launchProgress';
 
 type SorobanLaunchConfig = vscode.DebugConfiguration & DebuggerProcessConfig;
 const RUN_LAUNCH_PREFLIGHT_COMMAND = 'soroban-debugger.runLaunchPreflight';
@@ -49,23 +45,24 @@ class SorobanDebugConfigurationProvider implements vscode.DebugConfigurationProv
 }
 
 let logManager: LogManager | undefined;
+let launchProgressReporter: SorobanLaunchProgressReporter | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   logManager = new LogManager(context);
-  const factory = new SorobanDebugAdapterDescriptorFactory(context, logManager);
+  launchProgressReporter = new SorobanLaunchProgressReporter();
+  const factory = new SorobanDebugAdapterDescriptorFactory(context, logManager, launchProgressReporter);
   const configurationProvider = new SorobanDebugConfigurationProvider();
 
   context.subscriptions.push(
     vscode.debug.registerDebugAdapterDescriptorFactory('soroban', factory),
     vscode.debug.registerDebugConfigurationProvider('soroban', configurationProvider),
-    vscode.commands.registerCommand(RUN_LAUNCH_PREFLIGHT_COMMAND, async () => {
-      await runStandaloneLaunchPreflight();
-    }),
-    factory
+    factory,
+    launchProgressReporter
   );
 }
 
 export function deactivate(): void {
+  launchProgressReporter?.dispose();
   if (logManager) {
     logManager.dispose();
   }

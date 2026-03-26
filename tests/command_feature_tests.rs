@@ -110,6 +110,30 @@ fn analyze_json_outputs_findings_array() {
 }
 
 #[test]
+fn analyze_filters_by_severity_and_rule() {
+    let wasm = fixture_wasm("counter");
+
+    base_cmd()
+        .args([
+            "analyze",
+            "--contract",
+            wasm.to_str().unwrap(),
+            "--format",
+            "text",
+            "--disable-rule",
+            "hardcoded-address",
+            "--min-severity",
+            "high",
+        ])
+        .assert()
+        .success()
+        // If there are no high severity findings (or if hardcoded-address is the only one),
+        // we should either see specific output or just "No security findings".
+        // It's a smoke test to ensure args parse and run without panicking.
+        .stdout(predicate::str::contains("Findings").or(predicate::str::contains("No security findings")));
+}
+
+#[test]
 fn analyze_dynamic_execution_reports_function_metadata() {
     let wasm = fixture_wasm("counter");
 

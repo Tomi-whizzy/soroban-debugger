@@ -3,7 +3,7 @@
 //! This example shows how the enhanced security analyzer can detect
 //! storage-driven loops with improved precision and confidence scoring.
 
-use soroban_debugger::analyzer::security::SecurityAnalyzer;
+use soroban_debugger::analyzer::security::{AnalyzerFilter, SecurityAnalyzer};
 
 fn main() {
     println!("Testing improved unbounded iteration detection...");
@@ -12,7 +12,8 @@ fn main() {
     let wasm_with_storage_loop = create_wasm_with_storage_loop();
 
     let analyzer = SecurityAnalyzer::new();
-    match analyzer.analyze(&wasm_with_storage_loop, None, None) {
+    let filter = AnalyzerFilter::default();
+    match analyzer.analyze(&wasm_with_storage_loop, None, None, &filter) {
         Ok(report) => {
             println!(
                 "Analysis complete. Found {} security issues.",
@@ -26,26 +27,10 @@ fn main() {
                     println!("  Description: {}", finding.description);
 
                     if let Some(confidence) = &finding.confidence {
-                        println!("  Confidence: {:.0}%", confidence * 100.0);
+                        println!("  Confidence: {:.0}%", confidence);
                     }
-
-                    if let Some(context) = &finding.context {
-                        if let Some(depth) = context.loop_nesting_depth {
-                            println!("  Loop Nesting Depth: {}", depth);
-                        }
-
-                        if let Some(pattern) = &context.storage_call_pattern {
-                            println!("  Storage Calls in Loops: {}", pattern.calls_in_loops);
-                            println!(
-                                "  Storage Calls Outside Loops: {}",
-                                pattern.calls_outside_loops
-                            );
-                        }
-
-                        if let Some(cf_info) = &context.control_flow_info {
-                            println!("  Loop Types: {:?}", cf_info.loop_types);
-                            println!("  Conditional Branches: {}", cf_info.conditional_branches);
-                        }
+                    if let Some(rationale) = &finding.rationale {
+                        println!("  Rationale: {}", rationale);
                     }
 
                     println!("  Remediation: {}", finding.remediation);
@@ -113,9 +98,9 @@ mod tests {
     fn test_unbounded_iteration_detection() {
         let wasm = create_wasm_with_storage_loop();
         let analyzer = SecurityAnalyzer::new();
-
+        let filter = AnalyzerFilter::default();
         let report = analyzer
-            .analyze(&wasm, None, None)
+            .analyze(&wasm, None, None, &filter)
             .expect("Analysis should succeed");
 
         // Should find the unbounded iteration issue
@@ -138,13 +123,7 @@ mod tests {
 
         // Should have confidence metadata
         assert!(finding.confidence.is_some());
-        let confidence = finding.confidence.as_ref().unwrap();
-        assert!(!confidence.rationale.is_empty());
-
-        // Should have context metadata
-        assert!(finding.context.is_some());
-        let context = finding.context.as_ref().unwrap();
-        assert!(context.loop_nesting_depth.is_some());
-        assert!(context.storage_call_pattern.is_some());
+        assert!(finding.rationale.is_some());
+        assert!(!finding.rationale.as_ref().unwrap().is_empty());
     }
 }

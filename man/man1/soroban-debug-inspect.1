@@ -18,12 +18,18 @@ Show exported functions
 \fB\-\-metadata\fR
 Show contract metadata
 .TP
-\fB\-\-format\fR \fI<FORMAT>\fR
+\fB\-\-format\fR \fI<FORMAT>\fR [default: pretty]
 Output format: pretty (default) or json
 .br
 
 .br
-[\fIpossible values: \fRpretty, json]
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+pretty
+.IP \(bu 2
+json
+.RE
 .TP
 \fB\-\-expected\-hash\fR \fI<EXPECTED_HASH>\fR
 Expected SHA\-256 hash of the WASM file. If provided, loading will fail if the computed hash does not match

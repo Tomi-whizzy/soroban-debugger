@@ -95,6 +95,31 @@ pub struct Cli {
     )]
     pub history_file: Option<PathBuf>,
 
+    /// Maximum number of history records to retain.
+    ///
+    /// When set, the oldest records are dropped after each appended run so the
+    /// file never exceeds N entries.  Equivalent to setting
+    /// `SOROBAN_DEBUG_HISTORY_MAX_RECORDS`.
+    #[arg(
+        long,
+        global = true,
+        env = "SOROBAN_DEBUG_HISTORY_MAX_RECORDS",
+        value_name = "N"
+    )]
+    pub history_max_records: Option<usize>,
+
+    /// Drop history records older than N days.
+    ///
+    /// Applied on every append and when running `history prune`.  Equivalent
+    /// to setting `SOROBAN_DEBUG_HISTORY_MAX_AGE_DAYS`.
+    #[arg(
+        long,
+        global = true,
+        env = "SOROBAN_DEBUG_HISTORY_MAX_AGE_DAYS",
+        value_name = "DAYS"
+    )]
+    pub history_max_age_days: Option<u64>,
+
     /// Show historical budget trend visualization
     #[arg(long)]
     pub budget_trend: bool,
@@ -193,6 +218,9 @@ pub enum Commands {
 
     /// Run a multi-step scenario from a TOML file
     Scenario(ScenarioArgs),
+
+    /// Prune or compact run history according to a retention policy
+    HistoryPrune(HistoryPruneArgs),
 
     /// Plugin-provided subcommand (loaded at runtime)
     #[command(external_subcommand)]
@@ -1112,6 +1140,18 @@ pub struct AnalyzeArgs {
     /// Output format (text, json)
     #[arg(long, default_value = "text")]
     pub format: String,
+
+    /// Filter rules to enable (can be specified multiple times)
+    #[arg(long, value_name = "RULE_ID")]
+    pub enable_rule: Vec<String>,
+
+    /// Filter rules to disable (can be specified multiple times)
+    #[arg(long, value_name = "RULE_ID")]
+    pub disable_rule: Vec<String>,
+
+    /// Minimum finding severity to report (low, medium, high)
+    #[arg(long, default_value = "low")]
+    pub min_severity: String,
 }
 
 #[derive(Parser)]
@@ -1127,4 +1167,27 @@ pub struct ScenarioArgs {
     /// Initial storage state as JSON object
     #[arg(long)]
     pub storage: Option<String>,
+}
+
+/// Arguments for the `history prune` subcommand.
+#[derive(Parser, Debug)]
+#[command(about = "Prune or compact run history according to a retention policy")]
+pub struct HistoryPruneArgs {
+    /// Keep only the N most-recent history records; oldest are removed first.
+    ///
+    /// Takes precedence over `--history-max-records` (the global flag) when
+    /// both are supplied, so you can override the default policy for a single
+    /// explicit prune operation.
+    #[arg(long, value_name = "N")]
+    pub max_records: Option<usize>,
+
+    /// Remove records older than N days.
+    ///
+    /// Takes precedence over `--history-max-age-days` (the global flag).
+    #[arg(long, value_name = "DAYS")]
+    pub max_age_days: Option<u64>,
+
+    /// Show what would be removed without writing any changes to disk.
+    #[arg(long)]
+    pub dry_run: bool,
 }

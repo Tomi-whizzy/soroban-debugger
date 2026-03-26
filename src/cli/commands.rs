@@ -1,13 +1,14 @@
 use crate::analyzer::upgrade::{CompatibilityReport, ExecutionDiff, UpgradeAnalyzer};
-use crate::analyzer::{security::SecurityAnalyzer, symbolic::SymbolicAnalyzer};
+use crate::analyzer::security::{AnalyzerFilter, SecurityAnalyzer, Severity};
+use crate::analyzer::symbolic::{SymbolicAnalyzer, SymbolicConfig};
 use crate::cli::args::{
-    AnalyzeArgs, CompareArgs, InspectArgs, InteractiveArgs, OptimizeArgs, ProfileArgs, RemoteArgs,
-    ReplArgs, ReplayArgs, RunArgs, ScenarioArgs, ServerArgs, SymbolicArgs, TuiArgs,
-    UpgradeCheckArgs, Verbosity,
+    AnalyzeArgs, CompareArgs, HistoryPruneArgs, InspectArgs, InteractiveArgs, OptimizeArgs,
+    ProfileArgs, RemoteArgs, ReplArgs, ReplayArgs, RunArgs, ScenarioArgs, ServerArgs, SymbolicArgs,
+    SymbolicProfile, TuiArgs, UpgradeCheckArgs, Verbosity,
 };
 use crate::debugger::engine::DebuggerEngine;
 use crate::debugger::instruction_pointer::StepMode;
-use crate::history::{HistoryManager, RunHistory};
+use crate::history::{HistoryManager, PruneReport, RetentionPolicy, RunHistory};
 use crate::inspector::events::{ContractEvent, EventInspector};
 use crate::logging;
 use crate::output::OutputWriter;
@@ -205,11 +206,10 @@ fn render_security_report(output: &AnalyzeCommandOutput) -> String {
     lines.join("\n")
 }
 
-/// Run instruction-level stepping mode.
 fn run_instruction_stepping(
-    _engine: &mut DebuggerEngine,
-    _function: &str,
-    _args: Option<&str>,
+    engine: &mut DebuggerEngine,
+    function: &str,
+    args: Option<&str>,
 ) -> Result<()> {
     logging::log_display(
         "\n=== Instruction Stepping Mode ===",
@@ -765,7 +765,7 @@ pub fn run(args: RunArgs, verbosity: Verbosity) -> Result<()> {
         display_mock_call_log(&mock_calls);
     }
 
-    // Save budget info to history
+    // Save budget info to history, applying any configured retention policy.
     let host = engine.executor().host();
     let budget = crate::inspector::budget::BudgetInspector::get_cpu_usage(host);
     if let Ok(manager) = HistoryManager::new() {
@@ -776,7 +776,17 @@ pub fn run(args: RunArgs, verbosity: Verbosity) -> Result<()> {
             cpu_used: budget.cpu_instructions,
             memory_used: budget.memory_bytes,
         };
-        let _ = manager.append_record(record);
+        // Build retention policy from env vars that main.rs sets from the
+        // --history-max-records and --history-max-age-days global CLI flags.
+        let retention = RetentionPolicy {
+            max_records: std::env::var("SOROBAN_DEBUG_HISTORY_MAX_RECORDS")
+                .ok()
+                .and_then(|v| v.parse().ok()),
+            max_age_days: std::env::var("SOROBAN_DEBUG_HISTORY_MAX_AGE_DAYS")
+                .ok()
+                .and_then(|v| v.parse().ok()),
+        };
+        let _ = manager.append_record_with_policy(record, &retention);
     }
     let _json_memory_summary = engine.executor().last_memory_summary().cloned();
 
@@ -1837,7 +1847,7 @@ pub fn server(args: ServerArgs) -> Result<()> {
         "Starting remote debug server on port {}",
         args.port
     ));
-    if args.token.is_some() {
+    if let Some(token) = &args.token {
         print_info("Token authentication enabled");
         if token.trim().len() < 16 {
             print_warning(
@@ -2130,11 +2140,31 @@ pub fn analyze(args: AnalyzeArgs, _verbosity: Verbosity) -> Result<()> {
         }
     }
 
+    let min_severity = match args.min_severity.to_lowercase().as_str() {
+        "high" => Severity::High,
+        "medium" => Severity::Medium,
+        "low" => Severity::Low,
+        other => {
+            return Err(DebuggerError::InvalidArguments(format!(
+                "Invalid min-severity '{}'. Use 'low', 'medium', or 'high'.",
+                other
+            ))
+            .into());
+        }
+    };
+
+    let filter = AnalyzerFilter {
+        enable_rules: args.enable_rule,
+        disable_rules: args.disable_rule,
+        min_severity,
+    };
+
     let analyzer = SecurityAnalyzer::new();
     let report = analyzer.analyze(
         &wasm_file.bytes,
         executor.as_ref(),
         trace_entries.as_deref(),
+        &filter,
     )?;
     let output = AnalyzeCommandOutput {
         findings: report.findings,
@@ -2278,4 +2308,47 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("Failed to compute budget trend statistics"));
     }
+}
+
+/// Prune or compact run history according to a retention policy.
+///
+/// `global_policy` is built from the top-level `--history-max-records` /
+/// `--history-max-age-days` CLI flags (or env vars).  Fields from `args`
+/// (the explicit `history prune` subcommand flags) override the global policy
+/// when set, allowing per-invocation overrides.
+///
+/// With `--dry-run` the function prints what would be removed but does not
+/// write any changes to disk.
+pub fn history_prune(args: HistoryPruneArgs, global_policy: RetentionPolicy) -> Result<()> {
+    // Subcommand flags override the global policy when provided.
+    let policy = RetentionPolicy {
+        max_records: args.max_records.or(global_policy.max_records),
+        max_age_days: args.max_age_days.or(global_policy.max_age_days),
+    };
+
+    if policy.is_empty() {
+        println!("No retention policy specified. Use --max-records or --max-age-days.");
+        return Ok(());
+    }
+
+    let manager = HistoryManager::new()?;
+
+    if args.dry_run {
+        // Load, simulate, report — no disk writes.
+        let mut records = manager.load_history()?;
+        let before = records.len();
+        HistoryManager::apply_retention(&mut records, &policy);
+        let remaining = records.len();
+        let removed = before - remaining;
+        println!("[dry-run] Would remove {removed} record(s), {remaining} would remain.");
+    } else {
+        let PruneReport { removed, remaining } = manager.prune_history(&policy)?;
+        if removed == 0 {
+            println!("History is within the retention limit. Nothing removed ({remaining} records).");
+        } else {
+            println!("Removed {removed} record(s). {remaining} record(s) remaining.");
+        }
+    }
+
+    Ok(())
 }

@@ -4,7 +4,7 @@
 .SH NAME
 remote \- Connect to remote debug server
 .SH SYNOPSIS
-\fBremote\fR <\fB\-r\fR|\fB\-\-remote\fR> [\fB\-t\fR|\fB\-\-token\fR] [\fB\-c\fR|\fB\-\-contract\fR] [\fB\-f\fR|\fB\-\-function\fR] [\fB\-a\fR|\fB\-\-args\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBremote\fR <\fB\-r\fR|\fB\-\-remote\fR> [\fB\-t\fR|\fB\-\-token\fR] [\fB\-c\fR|\fB\-\-contract\fR] [\fB\-f\fR|\fB\-\-function\fR] [\fB\-a\fR|\fB\-\-args\fR] [\fB\-\-timeout\-ms\fR] [\fB\-\-ping\-timeout\-ms\fR] [\fB\-\-inspect\-timeout\-ms\fR] [\fB\-\-storage\-timeout\-ms\fR] [\fB\-\-retry\-attempts\fR] [\fB\-\-retry\-base\-delay\-ms\fR] [\fB\-\-retry\-max\-delay\-ms\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Connect to remote debug server
 .SH OPTIONS
@@ -23,6 +23,27 @@ Function name to execute
 .TP
 \fB\-a\fR, \fB\-\-args\fR \fI<ARGS>\fR
 Function arguments as JSON array
+.TP
+\fB\-\-timeout\-ms\fR \fI<TIMEOUT_MS>\fR [default: 30000]
+Default request timeout in milliseconds (applies when no per\-request override is set)
+.TP
+\fB\-\-ping\-timeout\-ms\fR \fI<PING_TIMEOUT_MS>\fR [default: 2000]
+Ping request timeout in milliseconds
+.TP
+\fB\-\-inspect\-timeout\-ms\fR \fI<INSPECT_TIMEOUT_MS>\fR [default: 5000]
+Inspect request timeout in milliseconds
+.TP
+\fB\-\-storage\-timeout\-ms\fR \fI<STORAGE_TIMEOUT_MS>\fR [default: 10000]
+GetStorage request timeout in milliseconds
+.TP
+\fB\-\-retry\-attempts\fR \fI<RETRY_ATTEMPTS>\fR [default: 3]
+Retry attempts for idempotent operations (Ping/Inspect/GetStorage/etc.)
+.TP
+\fB\-\-retry\-base\-delay\-ms\fR \fI<RETRY_BASE_DELAY_MS>\fR [default: 200]
+Base backoff delay in milliseconds for retries
+.TP
+\fB\-\-retry\-max\-delay\-ms\fR \fI<RETRY_MAX_DELAY_MS>\fR [default: 2000]
+Maximum backoff delay in milliseconds for retries
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help

@@ -536,7 +536,7 @@ impl ContractExecutor {
                 message: format!("{} -> {}", call.caller, call.callee),
                 caller: Some(call.caller.clone()),
                 function: Some(call.callee.clone()),
-                call_depth: Some(call.depth),
+                call_depth: Some(call.depth as u64),
                 storage_key: None,
                 storage_value: None,
             });

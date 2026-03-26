@@ -9,6 +9,8 @@ where
     pub result: Option<T>,
     pub budget: Option<BudgetInfo>,
     pub errors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hints: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]

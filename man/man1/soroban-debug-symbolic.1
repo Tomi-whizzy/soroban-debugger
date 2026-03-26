@@ -4,7 +4,7 @@
 .SH NAME
 symbolic \- Run symbolic execution to explore contract input space
 .SH SYNOPSIS
-\fBsymbolic\fR <\fB\-c\fR|\fB\-\-contract\fR> <\fB\-f\fR|\fB\-\-function\fR> [\fB\-o\fR|\fB\-\-output\fR] [\fB\-\-profile\fR] [\fB\-\-input\-combination\-cap\fR] [\fB\-\-path\-cap\fR] [\fB\-\-timeout\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBsymbolic\fR <\fB\-c\fR|\fB\-\-contract\fR> <\fB\-f\fR|\fB\-\-function\fR> [\fB\-o\fR|\fB\-\-output\fR] [\fB\-\-profile\fR] [\fB\-\-input\-combination\-cap\fR] [\fB\-\-path\-cap\fR] [\fB\-\-timeout\fR] [\fB\-\-seed\fR] [\fB\-\-replay\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Run symbolic execution to explore contract input space
 .SH OPTIONS
@@ -41,6 +41,12 @@ Maximum number of generated inputs to execute
 .TP
 \fB\-\-timeout\fR \fI<SECONDS>\fR
 Overall symbolic analysis timeout in seconds
+.TP
+\fB\-\-seed\fR \fI<N>\fR
+Seed the exploration order with this integer so the run is fully reproducible.  The emitted "Replay token" value can be passed here or to `\-\-replay` on any subsequent run to reproduce the exact same path ordering.  Mutually exclusive with `\-\-replay`
+.TP
+\fB\-\-replay\fR \fI<TOKEN>\fR
+Replay a previous symbolic run by providing its replay token (the seed value printed at the end of the original run).  Equivalent to `\-\-seed <TOKEN>`.  Mutually exclusive with `\-\-seed`
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help

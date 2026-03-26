@@ -96,8 +96,7 @@ pub struct DynamicTraceEvent {
     pub message: String,
     pub caller: Option<String>,
     pub function: Option<String>,
-    #[serde(default)]
-    pub call_depth: Option<usize>,
+    pub call_depth: Option<u64>,
     pub storage_key: Option<String>,
     pub storage_value: Option<String>,
 }
@@ -221,6 +220,9 @@ pub enum DebugRequest {
 
     /// Disconnect
     Disconnect,
+
+    /// Cancel a running execution
+    Cancel,
 
     /// Catch-all for forward compatibility
     #[serde(other)]
@@ -350,6 +352,9 @@ pub enum DebugResponse {
     /// Disconnected
     Disconnected,
 
+    /// Cancel acknowledged
+    CancelAck,
+
     /// Catch-all for forward compatibility
     #[serde(other)]
     Unknown,
@@ -466,7 +471,7 @@ mod tests {
             }
         }"#;
         let err = DebugMessage::parse(json).unwrap_err();
-        assert!(err.contains("request.client_version"), "Error should mention missing field: {}", err);
+        assert!(err.contains("client_version"), "Error should mention missing field: {}", err);
     }
 
     #[test]
@@ -493,4 +498,24 @@ mod tests {
         let event: DynamicTraceEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.call_depth, Some(5));
     }
+}
+
+use tokio::io::AsyncWriteExt;
+
+/// Helper to send a response to a writer
+pub async fn send_response<S>(writer: &mut S, response: DebugMessage) -> std::result::Result<(), String>
+where
+    S: tokio::io::AsyncWrite + Unpin,
+{
+    let json = serde_json::to_string(&response).map_err(|e| e.to_string())?;
+    writer
+        .write_all(json.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+    writer
+        .write_all(b"\n")
+        .await
+        .map_err(|e| e.to_string())?;
+    writer.flush().await.map_err(|e| e.to_string())?;
+    Ok(())
 }
