@@ -37,6 +37,7 @@ fn main() -> std::io::Result<()> {
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=src/cli/args.rs");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=MAN_OUT_DIR");
 
     Ok(())
 }

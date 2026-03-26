@@ -394,8 +394,6 @@ impl RemoteClient {
 
     /// Cancel the current execution
     pub fn cancel(&mut self) -> Result<()> {
-        let expected_id = self.message_id + 1;
-        
         let response = match self.send_request(DebugRequest::Cancel) {
             Ok(resp) => resp,
             Err(e) if e.to_string().contains("No response") => {

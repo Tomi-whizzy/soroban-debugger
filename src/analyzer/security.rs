@@ -550,10 +550,8 @@ fn analyze_unbounded_iteration_static(wasm_bytes: &[u8]) -> UnboundedStaticSigna
     let mut signal = UnboundedStaticSignal::default();
 
     let mut storage_calls_in_loops = 0usize;
-    let mut storage_calls_outside_loops = 0usize;
     let mut loop_types_with_calls: HashSet<String> = HashSet::new();
     let mut loop_types_seen: HashSet<String> = HashSet::new();
-    let mut conditional_branches = 0usize;
 
     for payload in Parser::new(0).parse_all(wasm_bytes) {
         let Ok(payload) = payload else {
@@ -603,7 +601,6 @@ fn analyze_unbounded_iteration_static(wasm_bytes: &[u8]) -> UnboundedStaticSigna
                             control_flow_stack.push(ControlFlowFrame::Block);
                         }
                         Operator::If { .. } => {
-                            conditional_branches += 1;
                             control_flow_stack.push(ControlFlowFrame::If);
                         }
                         Operator::Else => {}
@@ -627,14 +624,10 @@ fn analyze_unbounded_iteration_static(wasm_bytes: &[u8]) -> UnboundedStaticSigna
                                             loop_types_with_calls.insert(loop_type.to_string());
                                         }
                                     }
-                                } else {
-                                    storage_calls_outside_loops += 1;
                                 }
                             }
                         }
-                        Operator::BrIf { .. } => {
-                            conditional_branches += 1;
-                        }
+                        Operator::BrIf { .. } => {}
                         _ => {}
                     }
                 }
@@ -663,8 +656,6 @@ fn analyze_unbounded_iteration_static(wasm_bytes: &[u8]) -> UnboundedStaticSigna
         "Storage calls in loops: {}, max nesting depth: {}, loop types with calls: {:?}",
         storage_calls_in_loops, signal.max_nesting_depth, loop_types_with_calls
     ));
-    let _ = conditional_branches;
-    let _ = storage_calls_outside_loops;
     let _ = loop_types_with_calls;
     signal.confidence = Some(confidence);
 
