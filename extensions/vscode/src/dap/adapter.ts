@@ -224,8 +224,8 @@ export class SorobanDebugSession extends DebugSession {
             line: match?.line ?? bp.line,
             column: bp.column,
             source: args.source,
-            message: [match?.message, syncMessage, capabilityMessages].filter(Boolean).join(' ')
-          };
+            message: match?.message,
+          }
         })
       };
 

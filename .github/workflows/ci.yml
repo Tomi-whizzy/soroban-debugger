@@ -70,20 +70,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build soroban-debug (backend)
-        run: cargo build --bin soroban-debug
-
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+      # Using our new Makefile target here
+      - name: Build and Test Extension
+        run: make test-vscode
           cache: npm
           cache-dependency-path: extensions/vscode/package-lock.json
 
@@ -102,20 +97,15 @@ jobs:
     needs: check
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-
+      # Using our Makefile targets for consistency
       - name: Check Formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run Clippy (deny warnings)
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: make fmt
+      - name: Run Clippy
+        run: make lint
 
   bench:
     name: Benchmark Regression Check
@@ -202,21 +192,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-manpages-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-manpages-
-
       - name: Check man pages are up to date
         run: make check-man
 

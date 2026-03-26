@@ -635,17 +635,17 @@ export class DebuggerProcess {
       function: breakpoint.functionName,
       condition: breakpoint.condition,
       hit_condition: breakpoint.hitCondition,
-      log_message: breakpoint.logMessage,
-    });
-    this.expectResponse(response, "BreakpointSet");
+      log_message: breakpoint.logMessage
+    }as any);
+    this.expectResponse(response, 'BreakpointSet');
   }
 
   async clearBreakpoint(breakpointId: string): Promise<void> {
     const response = await this.sendRequest({
-      type: "ClearBreakpoint",
-      id: breakpointId,
-    });
-    this.expectResponse(response, "BreakpointCleared");
+      type: 'ClearBreakpoint',
+      id: breakpointId
+    } as any);
+    this.expectResponse(response, 'BreakpointCleared');
   }
 
   async evaluate(
