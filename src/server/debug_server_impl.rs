@@ -1,6 +1,6 @@
 use crate::debugger::engine::DebuggerEngine;
-use crate::runtime::executor::ContractExecutor;
 use crate::inspector::budget::BudgetInspector;
+use crate::runtime::executor::ContractExecutor;
 use crate::server::protocol::{
     negotiate_protocol_version, DebugMessage, DebugRequest, DebugResponse, PROTOCOL_MAX_VERSION,
     PROTOCOL_MIN_VERSION,
@@ -62,8 +62,9 @@ async fn send_response<S>(stream: &mut S, response: DebugMessage) -> Result<()>
 where
     S: tokio::io::AsyncWrite + Unpin,
 {
-    let json = serde_json::to_vec(&response)
-        .map_err(|e| crate::DebuggerError::ExecutionError(format!("Serialize response failed: {e}")))?;
+    let json = serde_json::to_vec(&response).map_err(|e| {
+        crate::DebuggerError::ExecutionError(format!("Serialize response failed: {e}"))
+    })?;
     stream
         .write_all(&json)
         .await
@@ -166,7 +167,10 @@ where
         }
 
         if matches!(&request, DebugRequest::Authenticate { .. }) {
-            if let DebugRequest::Authenticate { token: client_token } = request {
+            if let DebugRequest::Authenticate {
+                token: client_token,
+            } = request
+            {
                 let success = token.as_deref().map(|t| t == client_token).unwrap_or(true);
                 authenticated = success;
                 let auth_message = if success {
@@ -213,27 +217,22 @@ where
         let response: DebugResponse = match request {
             DebugRequest::Disconnect => DebugResponse::Disconnected,
 
-            DebugRequest::LoadContract { contract_path } => {
-                match std::fs::read(&contract_path) {
-                    Ok(bytes) => match ContractExecutor::new(bytes.clone()) {
-                        Ok(executor) => {
-                            let mut next = DebuggerEngine::new(executor, Vec::new());
-                            next.try_load_source_map(&bytes);
-                            engine = Some(next);
-                            DebugResponse::ContractLoaded { size: bytes.len() }
-                        }
-                        Err(e) => DebugResponse::Error {
-                            message: format!("Failed to create executor: {e}"),
-                        },
-                    },
+            DebugRequest::LoadContract { contract_path } => match std::fs::read(&contract_path) {
+                Ok(bytes) => match ContractExecutor::new(bytes.clone()) {
+                    Ok(executor) => {
+                        let mut next = DebuggerEngine::new(executor, Vec::new());
+                        next.try_load_source_map(&bytes);
+                        engine = Some(next);
+                        DebugResponse::ContractLoaded { size: bytes.len() }
+                    }
                     Err(e) => DebugResponse::Error {
-                        message: format!(
-                            "Failed to read contract {:?}: {}",
-                            contract_path, e
-                        ),
+                        message: format!("Failed to create executor: {e}"),
                     },
-                }
-            }
+                },
+                Err(e) => DebugResponse::Error {
+                    message: format!("Failed to read contract {:?}: {}", contract_path, e),
+                },
+            },
 
             DebugRequest::LoadSnapshot { snapshot_path } => {
                 let loader = SnapshotLoader::from_file(&snapshot_path);
@@ -257,7 +256,8 @@ where
                 Some(engine) => match engine.executor_mut().set_initial_storage(storage_json) {
                     Ok(()) => {
                         let snapshot = engine.executor().get_storage_snapshot()?;
-                        let json = serde_json::to_string(&snapshot).unwrap_or_else(|_| "{}".to_string());
+                        let json =
+                            serde_json::to_string(&snapshot).unwrap_or_else(|_| "{}".to_string());
                         DebugResponse::StorageState { storage_json: json }
                     }
                     Err(e) => DebugResponse::Error {
@@ -270,27 +270,26 @@ where
             },
 
             DebugRequest::Execute { function, args } => match engine.as_mut() {
-                Some(engine) => match engine.execute_without_breakpoints(
-                    &function,
-                    args.as_deref(),
-                ) {
-                    Ok(output) => DebugResponse::ExecutionResult {
-                        success: true,
-                        output,
-                        error: None,
-                        paused: engine.is_paused(),
-                        completed: true,
-                        source_location: None,
-                    },
-                    Err(e) => DebugResponse::ExecutionResult {
-                        success: false,
-                        output: String::new(),
-                        error: Some(e.to_string()),
-                        paused: false,
-                        completed: true,
-                        source_location: None,
-                    },
-                },
+                Some(engine) => {
+                    match engine.execute_without_breakpoints(&function, args.as_deref()) {
+                        Ok(output) => DebugResponse::ExecutionResult {
+                            success: true,
+                            output,
+                            error: None,
+                            paused: engine.is_paused(),
+                            completed: true,
+                            source_location: None,
+                        },
+                        Err(e) => DebugResponse::ExecutionResult {
+                            success: false,
+                            output: String::new(),
+                            error: Some(e.to_string()),
+                            paused: false,
+                            completed: true,
+                            source_location: None,
+                        },
+                    }
+                }
                 None => DebugResponse::Error {
                     message: "No contract loaded".to_string(),
                 },
@@ -337,4 +336,3 @@ where
 
     Ok(())
 }
-

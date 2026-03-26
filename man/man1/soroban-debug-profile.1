@@ -4,7 +4,7 @@
 .SH NAME
 profile \- Profile a single function execution and print hotspots + suggestions
 .SH SYNOPSIS
-\fBprofile\fR <\fB\-c\fR|\fB\-\-contract\fR> <\fB\-f\fR|\fB\-\-function\fR> [\fB\-a\fR|\fB\-\-args\fR] [\fB\-o\fR|\fB\-\-output\fR] [\fB\-s\fR|\fB\-\-storage\fR] [\fB\-\-expected\-hash\fR] [\fB\-\-flamegraph\fR] [\fB\-\-flamegraph\-stacks\fR] [\fB\-\-flamegraph\-width\fR] [\fB\-\-flamegraph\-height\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBprofile\fR <\fB\-c\fR|\fB\-\-contract\fR> <\fB\-f\fR|\fB\-\-function\fR> [\fB\-a\fR|\fB\-\-args\fR] [\fB\-o\fR|\fB\-\-output\fR] [\fB\-s\fR|\fB\-\-storage\fR] [\fB\-\-expected\-hash\fR] [\fB\-\-timeout\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Profile a single function execution and print hotspots + suggestions
 .SH OPTIONS
@@ -18,7 +18,7 @@ Function name to execute
 \fB\-a\fR, \fB\-\-args\fR \fI<ARGS>\fR
 Function arguments as JSON array (e.g., \*(Aq["arg1", "arg2"]\*(Aq)
 .TP
-\fB\-o\fR, \fB\-\-output\fR \fI<OUTPUT>\fR
+\fB\-o\fR, \fB\-\-output\fR \fI<o>\fR
 Output file for the profile report (default: stdout)
 .TP
 \fB\-s\fR, \fB\-\-storage\fR \fI<STORAGE>\fR
@@ -27,17 +27,10 @@ Initial storage state as JSON object
 \fB\-\-expected\-hash\fR \fI<EXPECTED_HASH>\fR
 Expected SHA\-256 hash of the WASM file. If provided, loading will fail if the computed hash does not match
 .TP
-\fB\-\-flamegraph\fR \fI<FLAMEGRAPH>\fR
-Export flame graph as SVG file
-.TP
-\fB\-\-flamegraph\-stacks\fR \fI<FLAMEGRAPH_STACKS>\fR
-Export collapsed stack format (intermediate format for flame graph)
-.TP
-\fB\-\-flamegraph\-width\fR \fI<FLAMEGRAPH_WIDTH>\fR [default: 1200]
-Width for flame graph SVG rendering in pixels
-.TP
-\fB\-\-flamegraph\-height\fR \fI<FLAMEGRAPH_HEIGHT>\fR [default: 800]
-Height for flame graph SVG rendering in pixels
+\fB\-\-timeout\fR \fI<SECONDS>\fR [default: 30]
+Maximum time allowed for contract execution, in seconds.
+The command exits with a non\-zero status code if this limit is exceeded.
+Use 0 to disable the timeout.
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help

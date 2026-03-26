@@ -896,21 +896,34 @@ Use structured JSON output for automation/CI with the `run` command:
 soroban-debug run --contract <path/to/contract.wasm> --function <fn> --output json
 ```
 
-Example output:
+Versioned envelope (stable contract across major machine-readable commands):
 
 ```json
 {
+  "schema_version": "1.0.0",
+  "command": "run",
   "status": "success",
   "result": {
-    "value": "42"
+    "result": "I64(42)",
+    "sha256": "4c29...<64 hex chars>...",
+    "budget": {
+      "cpu_instructions": 1200,
+      "memory_bytes": 2048
+    },
+    "storage_diff": {
+      "added": {},
+      "modified": {},
+      "deleted": []
+    }
   },
-  "budget": {
-    "cpu_instructions": 1200,
-    "memory_bytes": 2048
-  },
-  "errors": null
+  "error": null
 }
 ```
+
+Compatibility expectations:
+- `schema_version` is always present.
+- Within the same schema version, output changes are additive only.
+- Breaking output contract changes require a schema version bump.
 
 Default output mode remains pretty, human-readable output:
 

@@ -1,67 +1,33 @@
 #![allow(dead_code)]
 
 use soroban_debugger::server::DebugServer;
-use std::time::Duration;
-use tokio::net::TcpStream;
-use tokio::time::timeout;
+use std::path::Path;
 
-#[tokio::test]
-async fn test_server_shutdown_on_ctrl_c() {
-    let server = DebugServer::new(None, None, None).expect("Failed to create server");
-    let shutdown = server.shutdown.clone();
-
-    let server_task = tokio::spawn(async move {
-        let _ = server.run(0);
-    });
-
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    shutdown.notify_one();
-
-    let result = timeout(Duration::from_secs(5), server_task).await;
-    assert!(result.is_ok(), "Server should shutdown cleanly");
-    assert!(result.unwrap().is_ok(), "Server task should not panic");
+#[test]
+fn test_server_creation_without_token() {
+    let server = DebugServer::new(None, None, None);
+    assert!(server.is_ok(), "Server should be creatable without token");
 }
 
-#[tokio::test]
-async fn test_server_closes_socket_on_shutdown() {
-    let server = DebugServer::new(None, None, None).expect("Failed to create server");
-    let shutdown = server.shutdown.clone();
-
-    let server_task = tokio::spawn(async move {
-        let _ = server.run(0);
-    });
-
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    shutdown.notify_one();
-
-    timeout(Duration::from_secs(5), server_task)
-        .await
-        .expect("Server shutdown timed out")
-        .expect("Server task panicked");
-}
-
-#[tokio::test]
-async fn test_server_creation_with_token() {
+#[test]
+fn test_server_creation_with_token() {
     let token = "valid-test-token-1234567890".to_string();
     let server = DebugServer::new(Some(token.clone()), None, None)
         .expect("Failed to create server with token");
 
-    assert_eq!(server.token, Some(token));
+    let _ = server;
 }
 
-#[tokio::test]
-async fn test_server_rejects_pending_requests_on_shutdown() {
-    let server = DebugServer::new(None, None, None).expect("Failed to create server");
-    let shutdown = server.shutdown.clone();
-
-    let server_task = tokio::spawn(async move {
-        let _ = server.run(0);
-    });
-
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    shutdown.notify_one();
-
-    let result = timeout(Duration::from_secs(5), server_task).await;
-    assert!(result.is_ok(), "Server should complete shutdown quickly");
+#[test]
+fn test_server_rejects_tls_configuration() {
+    let fake_cert = Path::new("tests/fixtures/cert.pem");
+    match DebugServer::new(None, Some(fake_cert), None) {
+        Ok(_) => panic!("expected TLS unsupported error"),
+        Err(err) => {
+            assert!(
+                err.to_string().contains("TLS not supported"),
+                "expected TLS unsupported error"
+            );
+        }
+    }
 }

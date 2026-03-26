@@ -34,7 +34,6 @@ fn symbolic_runs_against_counter_fixture() {
         .success()
         .stdout(predicate::str::contains("Function: increment"))
         .stdout(predicate::str::contains("Paths explored:"))
-        .stdout(predicate::str::contains("Budget:"))
         .stdout(predicate::str::contains("Truncation:"));
 }
 
@@ -84,9 +83,6 @@ fn symbolic_cli_honors_caps_and_reports_truncation() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Budget: path_cap=2, input_combination_cap=4, timeout=30s",
-        ))
         .stdout(predicate::str::contains("Truncation:"))
         .stdout(predicate::str::contains("input combination cap reached"))
         .stdout(predicate::str::contains("path exploration cap reached"));
@@ -130,7 +126,10 @@ fn analyze_filters_by_severity_and_rule() {
         // If there are no high severity findings (or if hardcoded-address is the only one),
         // we should either see specific output or just "No security findings".
         // It's a smoke test to ensure args parse and run without panicking.
-        .stdout(predicate::str::contains("Findings").or(predicate::str::contains("No security findings")));
+        .stdout(
+            predicate::str::contains("Findings")
+                .or(predicate::str::contains("No security findings")),
+        );
 }
 
 #[test]

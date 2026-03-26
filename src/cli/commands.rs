@@ -1607,6 +1607,10 @@ pub fn profile(args: ProfileArgs) -> Result<()> {
     // Create executor
     let mut executor = ContractExecutor::new(wasm_bytes)?;
 
+    // Apply timeout — consistent with run, interactive, and analyze.
+    // A value of 0 disables the timeout.
+    executor.set_timeout(args.timeout);
+
     // Initial storage (optional)
     if let Some(storage_json) = &args.storage {
         let storage = parse_storage(storage_json)?;

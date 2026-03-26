@@ -201,6 +201,10 @@ export class SorobanDebugSession extends DebugSession {
           return Boolean(match?.verified && bp.functionName);
         })
       );
+      const syncMessage = syncErrors.size > 0
+        ? `${syncErrors.size} breakpoint sync error(s)`
+        : '';
+      const capabilityMessages = '';
 
       this.state.breakpoints.set(source, managedBreakpoints);
       this.sourceFunctionBreakpoints.set(
@@ -215,13 +219,16 @@ export class SorobanDebugSession extends DebugSession {
       response.body = {
         breakpoints: breakpoints.map((bp) => {
           const match = resolved.find((resolvedBreakpoint) => resolvedBreakpoint.requestedLine === bp.line);
+          const mbp = managedBreakpoints.find(m => m.line === bp.line);
+          const syncMessage = mbp ? syncErrors.get(mbp.id) : undefined;
+          const capabilityMessages = this.describeCapabilityFallback(bp);
           return {
             verified: match?.verified ?? false,
             line: match?.line ?? bp.line,
             column: bp.column,
             source: args.source,
-            message: [match?.message, syncMessage, capabilityMessages].filter(Boolean).join(' ')
-          };
+            message: match?.message,
+          }
         })
       };
 

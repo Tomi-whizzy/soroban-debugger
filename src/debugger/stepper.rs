@@ -182,28 +182,6 @@ impl Stepper {
         }
         false
     }
-    /// Find next instruction at lower call depth (step out)
-    fn find_next_instruction_at_lower_depth(&self, debug_state: &mut DebugState) -> bool {
-        let current_depth = debug_state.instruction_pointer().call_stack_depth();
-
-        // Already at root — cannot step out at the instruction level
-        if current_depth == 0 {
-            return false;
-        }
-
-        let target_depth = current_depth - 1;
-
-        for _ in 0..10_000 {
-            if debug_state.next_instruction().is_none() {
-                break;
-            }
-            if debug_state.instruction_pointer().call_stack_depth() <= target_depth {
-                return true;
-            }
-        }
-        false
-    }
-
     fn find_next_control_flow(&self, debug_state: &mut DebugState) -> bool {
         for _ in 0..STEP_GUARD {
             match debug_state.next_instruction() {

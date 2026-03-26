@@ -420,6 +420,24 @@ impl Drop for LoadedPlugin {
 }
 
 #[cfg(test)]
+impl LoadedPlugin {
+    pub(crate) fn from_parts_for_tests(
+        plugin: Box<dyn InspectorPlugin>,
+        path: PathBuf,
+        manifest: PluginManifest,
+        trust: PluginTrustAssessment,
+    ) -> Self {
+        Self {
+            plugin,
+            library: None,
+            path,
+            manifest,
+            trust,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::super::manifest::PluginSignature;
     use super::*;
@@ -611,23 +629,5 @@ mod tests {
             assessment.signer.as_ref().map(|s| s.signer.as_str()),
             Some("trusted-signer")
         );
-    }
-}
-
-#[cfg(test)]
-impl LoadedPlugin {
-    pub(crate) fn from_parts_for_tests(
-        plugin: Box<dyn InspectorPlugin>,
-        path: PathBuf,
-        manifest: PluginManifest,
-        trust: PluginTrustAssessment,
-    ) -> Self {
-        Self {
-            plugin,
-            library: None,
-            path,
-            manifest,
-            trust,
-        }
     }
 }

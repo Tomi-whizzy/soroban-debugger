@@ -15,7 +15,7 @@ Path to the contract WASM file
 \fB\-f\fR, \fB\-\-function\fR \fI<FUNCTION>\fR
 Function name to execute
 .TP
-\fB\-o\fR, \fB\-\-output\fR \fI<OUTPUT>\fR
+\fB\-o\fR, \fB\-\-output\fR \fI<o>\fR
 Output file for the scenario TOML
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR [default: balanced]
@@ -40,7 +40,10 @@ Maximum number of input combinations to generate deterministically
 Maximum number of generated inputs to execute
 .TP
 \fB\-\-timeout\fR \fI<SECONDS>\fR
-Overall symbolic analysis timeout in seconds
+Maximum time for symbolic analysis, in seconds.
+When omitted, the budget is controlled by \fB\-\-profile\fR.
+The command exits with a non\-zero status code if this limit is exceeded.
+Use 0 to disable the timeout entirely.
 .TP
 \fB\-\-seed\fR \fI<N>\fR
 Seed the exploration order with this integer so the run is fully reproducible.  The emitted "Replay token" value can be passed here or to `\-\-replay` on any subsequent run to reproduce the exact same path ordering.  Mutually exclusive with `\-\-replay`

@@ -37,7 +37,7 @@ export interface LaunchPreflightCommandHost {
   showInformationMessage(message: string, ...actions: string[]): Promise<string | undefined>;
   showWarningMessage(message: string, ...actions: string[]): Promise<string | undefined>;
   showErrorMessage(message: string, ...actions: string[]): Promise<string | undefined>;
-  applyQuickFix(quickFix: LaunchPreflightQuickFix, folder?: WorkspaceFolderLike): Promise<void>;
+  applyQuickFix(quickFix: LaunchPreflightQuickFix, folder?: WorkspaceFolderLike, configName?: string, field?: string): Promise<void>;
 }
 
 export function collectSorobanLaunchConfigs(
@@ -107,7 +107,7 @@ export async function runLaunchPreflightCommand(
   );
   const quickFix = fromQuickPickLabel(selected);
   if (quickFix) {
-    await host.applyQuickFix(quickFix, candidate.folder);
+    await host.applyQuickFix(quickFix, candidate.folder, candidate.config.name, issue.field);
   }
 
   return 'failed';

@@ -33,8 +33,10 @@ Set breakpoint at function name
 \fB\-\-mock\fR \fI<CONTRACT_ID.function=return_value>\fR
 Mock cross\-contract return: CONTRACT_ID.function=return_value (repeatable)
 .TP
-\fB\-\-timeout\fR \fI<TIMEOUT>\fR [default: 30]
-Execution timeout in seconds (default: 30)
+\fB\-\-timeout\fR \fI<SECONDS>\fR [default: 30]
+Maximum time allowed for contract execution, in seconds.
+The command exits with a non\-zero status code if this limit is exceeded.
+Use 0 to disable the timeout.
 .TP
 \fB\-\-instruction\-debug\fR
 Enable instruction\-level debugging

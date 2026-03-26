@@ -21,8 +21,10 @@ Function arguments as JSON array for dynamic analysis (optional)
 \fB\-s\fR, \fB\-\-storage\fR \fI<STORAGE>\fR
 Initial storage state as JSON object (optional)
 .TP
-\fB\-\-timeout\fR \fI<TIMEOUT>\fR [default: 30]
-Execution timeout in seconds for dynamic analysis (default: 30)
+\fB\-\-timeout\fR \fI<SECONDS>\fR [default: 30]
+Maximum time allowed for dynamic analysis, in seconds.
+The command exits with a non\-zero status code if this limit is exceeded.
+Use 0 to disable the timeout.
 .TP
 \fB\-\-format\fR \fI<FORMAT>\fR [default: text]
 Output format (text, json)

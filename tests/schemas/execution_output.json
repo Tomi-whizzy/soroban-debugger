@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "ExecutionOutput",
+  "title": "RunCommandOutputEnvelope",
   "type": "object",
   "required": ["schema_version", "status", "result", "sha256", "budget", "storage_diff"],
   "properties": {
@@ -10,68 +10,74 @@
     },
     "status": {
       "type": "string",
+      "const": "1.0.0"
+    },
+    "command": {
+      "type": "string",
+      "const": "run"
+    },
+    "status": {
+      "type": "string",
       "enum": ["success", "error"]
     },
     "result": {
-      "type": ["string", "null"]
-    },
-    "sha256": {
-      "type": "string",
-      "pattern": "^[a-f0-9]{64}$"
-    },
-    "budget": {
-      "type": "object",
-      "required": ["cpu_instructions", "memory_bytes"],
+      "type": ["object", "null"],
       "properties": {
-        "cpu_instructions": { "type": "integer" },
-        "memory_bytes": { "type": "integer" }
-      }
-    },
-    "storage_diff": {
-      "type": "object",
-      "required": ["added", "modified", "deleted"],
-      "properties": {
-        "added": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
+        "result": {
+          "type": "string"
         },
-        "modified": {
+        "sha256": {
+          "type": "string"
+        },
+        "budget": {
           "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "items": { "type": "string" },
-            "minItems": 2,
-            "maxItems": 2
+          "required": ["cpu_instructions", "memory_bytes"],
+          "properties": {
+            "cpu_instructions": { "type": "integer" },
+            "memory_bytes": { "type": "integer" }
           }
         },
-        "deleted": {
-          "type": "array",
-          "items": { "type": "string" }
+        "storage_diff": {
+          "type": "object",
+          "required": ["added", "modified", "deleted"],
+          "properties": {
+            "added": {
+              "type": "object"
+            },
+            "modified": {
+              "type": "object"
+            },
+            "deleted": {
+              "type": "array"
+            },
+            "triggered_alerts": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
         },
-        "triggered_alerts": {
+        "events": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": { "type": "object" }
+        },
+        "auth": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "mock_calls": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "ledger_entries": {
+          "type": ["object", "null"]
         }
       }
     },
-    "events": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["topics", "data"],
-        "properties": {
-          "contract_id": { "type": ["string", "null"] },
-          "topics": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "data": { "type": "string" }
-        }
+    "error": {
+      "type": ["object", "null"],
+      "properties": {
+        "message": { "type": "string" }
       }
-    },
-    "errors": {
-      "type": "array",
-      "items": { "type": "string" }
     }
   }
 }
