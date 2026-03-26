@@ -15,7 +15,7 @@ Path to the contract WASM file
 \fB\-f\fR, \fB\-\-function\fR \fI<FUNCTION>\fR
 Function name to execute
 .TP
-\fB\-o\fR, \fB\-\-output\fR \fI<OUTPUT>\fR
+\fB\-o\fR, \fB\-\-output\fR \fI<o>\fR
 Output file for the scenario TOML
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR [default: balanced]
@@ -32,7 +32,10 @@ Maximum number of input combinations to generate deterministically
 Maximum number of generated inputs to execute
 .TP
 \fB\-\-timeout\fR \fI<SECONDS>\fR
-Overall symbolic analysis timeout in seconds
+Maximum time for symbolic analysis, in seconds.
+When omitted, the budget is controlled by \fB\-\-profile\fR.
+The command exits with a non\-zero status code if this limit is exceeded.
+Use 0 to disable the timeout entirely.
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help

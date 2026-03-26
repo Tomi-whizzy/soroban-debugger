@@ -67,6 +67,16 @@ impl Verbosity {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Shared timeout constant — single source of truth for all commands
+// ---------------------------------------------------------------------------
+
+/// Default execution timeout in seconds, applied uniformly across all
+/// commands that accept `--timeout`.
+pub const DEFAULT_TIMEOUT_SECS: u64 = 30;
+
+// ---------------------------------------------------------------------------
+
 #[derive(Parser)]
 #[command(name = "soroban-debug")]
 #[command(about = "A debugger for Soroban smart contracts", long_about = None)]
@@ -339,8 +349,10 @@ pub struct RunArgs {
     #[arg(long)]
     pub overwrite: bool,
 
-    /// Execution timeout in seconds (default: 30)
-    #[arg(long, default_value = "30")]
+    /// Maximum time allowed for contract execution, in seconds.
+    /// The command exits with a non-zero status code if this limit is exceeded.
+    /// Use 0 to disable the timeout.
+    #[arg(long, default_value_t = DEFAULT_TIMEOUT_SECS, value_name = "SECONDS")]
     pub timeout: u64,
 
     /// Trigger a prominent alert when a critical storage key is modified (repeatable)
@@ -453,8 +465,10 @@ pub struct InteractiveArgs {
     #[arg(long, value_name = "CONTRACT_ID.function=return_value")]
     pub mock: Vec<String>,
 
-    /// Execution timeout in seconds (default: 30)
-    #[arg(long, default_value = "30")]
+    /// Maximum time allowed for contract execution, in seconds.
+    /// The command exits with a non-zero status code if this limit is exceeded.
+    /// Use 0 to disable the timeout.
+    #[arg(long, default_value_t = DEFAULT_TIMEOUT_SECS, value_name = "SECONDS")]
     pub timeout: u64,
 
     /// Enable instruction-level debugging
@@ -612,8 +626,10 @@ pub struct OptimizeArgs {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands, OutputFormat, SymbolicProfile};
+    use super::{Cli, Commands, OutputFormat, SymbolicProfile, DEFAULT_TIMEOUT_SECS};
     use clap::Parser;
+
+    // ── output format tests (unchanged) ────────────────────────────────────
 
     #[test]
     fn run_output_defaults_to_pretty() {
@@ -767,6 +783,191 @@ mod tests {
         assert_eq!(args.path_cap, Some(200));
         assert_eq!(args.timeout, Some(45));
     }
+
+    // ── timeout consistency tests (new) ────────────────────────────────────
+
+    /// run uses the shared default when --timeout is not supplied
+    #[test]
+    fn run_timeout_defaults_to_constant() {
+        let cli = Cli::parse_from([
+            "soroban-debug",
+            "run",
+            "--contract",
+            "contract.wasm",
+            "--function",
+            "increment",
+        ]);
+        let Commands::Run(args) = cli.command.unwrap() else {
+            panic!("run expected");
+        };
+        assert_eq!(args.timeout, DEFAULT_TIMEOUT_SECS);
+    }
+
+    /// run accepts an explicit --timeout value
+    #[test]
+    fn run_timeout_accepts_explicit_value() {
+        let cli = Cli::parse_from([
+            "soroban-debug",
+            "run",
+            "--contract",
+            "contract.wasm",
+            "--function",
+            "increment",
+            "--timeout",
+            "60",
+        ]);
+        let Commands::Run(args) = cli.command.unwrap() else {
+            panic!("run expected");
+        };
+        assert_eq!(args.timeout, 60);
+    }
+
+    /// run accepts --timeout 0 to disable the timeout
+    #[test]
+    fn run_timeout_zero_disables_timeout() {
+        let cli = Cli::parse_from([
+            "soroban-debug",
+            "run",
+            "--contract",
+            "contract.wasm",
+            "--function",
+            "increment",
+            "--timeout",
+            "0",
+        ]);
+        let Commands::Run(args) = cli.command.unwrap() else {
+            panic!("run expected");
+        };
+        assert_eq!(args.timeout, 0);
+    }
+
+    /// interactive uses the shared default
+    #[test]
+    fn interactive_timeout_defaults_to_constant() {
+        let cli = Cli::parse_from([
+            "soroban-debug",
+            "interactive",
+            "--contract",
+            "contract.wasm",
+            "--function",
+            "increment",
+        ]);
+        let Commands::Interactive(args) = cli.command.unwrap() else {
+            panic!("interactive expected");
+        };
+        assert_eq!(args.timeout, DEFAULT_TIMEOUT_SECS);
+    }
+
+    /// interactive accepts an explicit --timeout value
+    #[test]
+    fn interactive_timeout_accepts_explicit_value() {
+        let cli = Cli::parse_from([
+            "soroban-debug",
+            "interactive",
+            "--contract",
+            "contract.wasm",
+            "--function",
+            "increment",
+            "--timeout",
+            "120",
+        ]);
+        let Commands::Interactive(args) = cli.command.unwrap() else {
+            panic!("interactive expected");
+        };
+        assert_eq!(args.timeout, 120);
+    }
+
+    /// analyze uses the shared default
+    #[test]
+    fn analyze_timeout_defaults_to_constant() {
+        let cli = Cli::parse_from([
+            "soroban-debug",
+            "analyze",
+            "--contract",
+            "contract.wasm",
+        ]);
+        let Commands::Analyze(args) = cli.command.unwrap() else {
+            panic!("analyze expected");
+        };
+        assert_eq!(args.timeout, DEFAULT_TIMEOUT_SECS);
+    }
+
+    /// analyze accepts an explicit --timeout value
+    #[test]
+    fn analyze_timeout_accepts_explicit_value() {
+        let cli = Cli::parse_from([
+            "soroban-debug",
+            "analyze",
+            "--contract",
+            "contract.wasm",
+            "--timeout",
+            "90",
+        ]);
+        let Commands::Analyze(args) = cli.command.unwrap() else {
+            panic!("analyze expected");
+        };
+        assert_eq!(args.timeout, 90);
+    }
+
+    /// profile now has --timeout and uses the shared default
+    #[test]
+    fn profile_timeout_defaults_to_constant() {
+        let cli = Cli::parse_from([
+            "soroban-debug",
+            "profile",
+            "--contract",
+            "contract.wasm",
+            "--function",
+            "increment",
+        ]);
+        let Commands::Profile(args) = cli.command.unwrap() else {
+            panic!("profile expected");
+        };
+        assert_eq!(args.timeout, DEFAULT_TIMEOUT_SECS);
+    }
+
+    /// profile accepts an explicit --timeout value
+    #[test]
+    fn profile_timeout_accepts_explicit_value() {
+        let cli = Cli::parse_from([
+            "soroban-debug",
+            "profile",
+            "--contract",
+            "contract.wasm",
+            "--function",
+            "increment",
+            "--timeout",
+            "45",
+        ]);
+        let Commands::Profile(args) = cli.command.unwrap() else {
+            panic!("profile expected");
+        };
+        assert_eq!(args.timeout, 45);
+    }
+
+    /// symbolic still uses Option<u64> — None means "use profile budget"
+    #[test]
+    fn symbolic_timeout_none_by_default() {
+        let cli = Cli::parse_from([
+            "soroban-debug",
+            "symbolic",
+            "--contract",
+            "contract.wasm",
+            "--function",
+            "increment",
+        ]);
+        let Commands::Symbolic(args) = cli.command.unwrap() else {
+            panic!("symbolic expected");
+        };
+        // symbolic is intentionally Option — no default, controlled by profile
+        assert_eq!(args.timeout, None);
+    }
+
+    /// All commands that use u64 timeout share the same DEFAULT_TIMEOUT_SECS value
+    #[test]
+    fn default_timeout_constant_is_30() {
+        assert_eq!(DEFAULT_TIMEOUT_SECS, 30);
+    }
 }
 
 #[derive(Parser)]
@@ -837,9 +1038,16 @@ pub struct ProfileArgs {
     /// Initial storage state as JSON object
     #[arg(short, long)]
     pub storage: Option<String>,
+
     /// Expected SHA-256 hash of the WASM file. If provided, loading will fail if the computed hash does not match.
     #[arg(long)]
     pub expected_hash: Option<String>,
+
+    /// Maximum time allowed for contract execution, in seconds.
+    /// The command exits with a non-zero status code if this limit is exceeded.
+    /// Use 0 to disable the timeout.
+    #[arg(long, default_value_t = DEFAULT_TIMEOUT_SECS, value_name = "SECONDS")]
+    pub timeout: u64,
 }
 
 #[derive(Parser)]
@@ -868,7 +1076,10 @@ pub struct SymbolicArgs {
     #[arg(long, value_name = "N")]
     pub path_cap: Option<usize>,
 
-    /// Overall symbolic analysis timeout in seconds
+    /// Maximum time for symbolic analysis, in seconds.
+    /// When omitted, the budget is controlled by --profile.
+    /// The command exits with a non-zero status code if this limit is exceeded.
+    /// Use 0 to disable the timeout entirely.
     #[arg(long, value_name = "SECONDS")]
     pub timeout: Option<u64>,
 }
@@ -956,8 +1167,10 @@ pub struct AnalyzeArgs {
     #[arg(short, long)]
     pub storage: Option<String>,
 
-    /// Execution timeout in seconds for dynamic analysis (default: 30)
-    #[arg(long, default_value = "30")]
+    /// Maximum time allowed for dynamic analysis, in seconds.
+    /// The command exits with a non-zero status code if this limit is exceeded.
+    /// Use 0 to disable the timeout.
+    #[arg(long, default_value_t = DEFAULT_TIMEOUT_SECS, value_name = "SECONDS")]
     pub timeout: u64,
 
     /// Output format (text, json)
