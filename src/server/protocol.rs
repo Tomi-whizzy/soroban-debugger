@@ -96,8 +96,10 @@ pub struct DynamicTraceEvent {
     pub message: String,
     pub caller: Option<String>,
     pub function: Option<String>,
-    pub call_depth: Option<u64>,
+    pub call_depth: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_value: Option<String>,
     /// Actor address associated with this event (e.g., the address being authorized).
     #[serde(default, skip_serializing_if = "Option::is_none")]

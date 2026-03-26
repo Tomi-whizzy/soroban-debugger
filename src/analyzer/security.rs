@@ -366,10 +366,7 @@ impl SecurityRule for AuthorizationCheckRule {
                         rationale: Some("Found storage writes occurring outside authorized scope or for mismatched actors within the call frame.".to_string()),
                     });
                 }
-            }
         }
-        }
-
         Ok(findings)
     }
 }
@@ -395,7 +392,7 @@ impl SecurityRule for ReentrancyPatternRule {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct FrameKey {
     function: Option<String>,
-    call_depth: Option<u64>,
+    call_depth: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -932,7 +929,7 @@ fn analyze_reentrancy_pattern_dynamic(trace: &[DynamicTraceEvent]) -> Vec<Securi
 }
 
 fn frame_key_for(entry: &DynamicTraceEvent) -> Option<FrameKey> {
-    if entry.function.is_none() && entry.call_depth.is_none() {
+    if entry.function.is_none() {
         return None;
     }
 
@@ -1225,8 +1222,9 @@ mod tests {
             function: None,
             storage_key: None,
             storage_value: None,
-            call_depth: Some(depth as usize),
+            call_depth: depth as u64,
             caller: None,
+            address: None,
         }
     }
 
@@ -1332,9 +1330,10 @@ mod tests {
                 message: "main -> withdraw".to_string(),
                 caller: Some("main".to_string()),
                 function: Some("withdraw".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: None,
                 storage_value: None,
+                address: None,
             },
             DynamicTraceEvent {
                 sequence: 2,
@@ -1342,9 +1341,10 @@ mod tests {
                 message: "withdraw invokes token.transfer".to_string(),
                 caller: Some("main".to_string()),
                 function: Some("withdraw".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: None,
                 storage_value: None,
+                address: None,
             },
             DynamicTraceEvent {
                 sequence: 3,
@@ -1352,9 +1352,10 @@ mod tests {
                 message: "write balance".to_string(),
                 caller: Some("main".to_string()),
                 function: Some("withdraw".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: Some("balance:alice".to_string()),
                 storage_value: Some("0".to_string()),
+                address: None,
             },
         ]);
 
@@ -1378,9 +1379,10 @@ mod tests {
                 message: "main -> settle".to_string(),
                 caller: Some("main".to_string()),
                 function: Some("settle".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: None,
                 storage_value: None,
+                address: None,
             },
             DynamicTraceEvent {
                 sequence: 2,
@@ -1388,9 +1390,10 @@ mod tests {
                 message: "mark settled".to_string(),
                 caller: Some("main".to_string()),
                 function: Some("settle".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: Some("settled:alice".to_string()),
                 storage_value: Some("true".to_string()),
+                address: None,
             },
             DynamicTraceEvent {
                 sequence: 3,
@@ -1398,9 +1401,10 @@ mod tests {
                 message: "settle invokes payout".to_string(),
                 caller: Some("main".to_string()),
                 function: Some("settle".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: None,
                 storage_value: None,
+                address: None,
             },
             DynamicTraceEvent {
                 sequence: 4,
@@ -1408,9 +1412,10 @@ mod tests {
                 message: "emit bookkeeping marker".to_string(),
                 caller: Some("main".to_string()),
                 function: Some("settle".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: Some("audit:last_settle".to_string()),
                 storage_value: Some("1".to_string()),
+                address: None,
             },
         ]);
 
@@ -1426,9 +1431,10 @@ mod tests {
                 message: "main -> withdraw".to_string(),
                 caller: Some("main".to_string()),
                 function: Some("withdraw".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: None,
                 storage_value: None,
+                address: None,
             },
             DynamicTraceEvent {
                 sequence: 2,
@@ -1436,9 +1442,10 @@ mod tests {
                 message: "withdraw invokes token.transfer".to_string(),
                 caller: Some("main".to_string()),
                 function: Some("withdraw".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: None,
                 storage_value: None,
+                address: None,
             },
             DynamicTraceEvent {
                 sequence: 3,
@@ -1446,7 +1453,7 @@ mod tests {
                 message: "nested contract writes receipt".to_string(),
                 caller: Some("withdraw".to_string()),
                 function: Some("token.transfer".to_string()),
-                call_depth: Some(1),
+                call_depth: 1,
                 storage_key: Some("receipt:1".to_string()),
                 storage_value: Some("ok".to_string()),
                 address: None,
@@ -1514,7 +1521,7 @@ mod tests {
                 message: "write key1".to_string(),
                 caller: None,
                 function: Some("test_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: Some("key1".to_string()),
                 storage_value: Some("value1".to_string()),
                 address: None,
@@ -1525,7 +1532,7 @@ mod tests {
                 message: "auth check".to_string(),
                 caller: None,
                 function: Some("test_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: None,
                 storage_value: None,
                 address: None,
@@ -1549,7 +1556,7 @@ mod tests {
                 message: "auth check".to_string(),
                 caller: None,
                 function: Some("test_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: None,
                 storage_value: None,
                 address: Some("G123...".to_string()),
@@ -1560,7 +1567,7 @@ mod tests {
                 message: "write key1".to_string(),
                 caller: None,
                 function: Some("test_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: Some("key1:G123...".to_string()),
                 storage_value: Some("value1".to_string()),
                 address: None,
@@ -1582,7 +1589,7 @@ mod tests {
                 message: "write key1".to_string(),
                 caller: None,
                 function: Some("test_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: Some("key1".to_string()),
                 storage_value: Some("value1".to_string()),
                 address: None,
@@ -1593,7 +1600,7 @@ mod tests {
                 message: "write key2".to_string(),
                 caller: None,
                 function: Some("test_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: Some("key2".to_string()),
                 storage_value: Some("value2".to_string()),
                 address: None,
@@ -1604,7 +1611,7 @@ mod tests {
                 message: "auth check".to_string(),
                 caller: None,
                 function: Some("test_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: None,
                 storage_value: None,
                 address: None,
@@ -1628,7 +1635,7 @@ mod tests {
                 message: "write key1".to_string(),
                 caller: None,
                 function: Some("test_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: Some("key1".to_string()),
                 storage_value: Some("value1".to_string()),
                 address: None,
@@ -1639,7 +1646,7 @@ mod tests {
                 message: "write key2".to_string(),
                 caller: None,
                 function: Some("test_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: Some("key2".to_string()),
                 storage_value: Some("value2".to_string()),
                 address: None,
@@ -1664,7 +1671,7 @@ mod tests {
                 message: "auth check inside nested".to_string(),
                 caller: None,
                 function: Some("nested_function".to_string()),
-                call_depth: Some(1),
+                call_depth: 1,
                 storage_key: None,
                 storage_value: None,
                 address: None,
@@ -1675,7 +1682,7 @@ mod tests {
                 message: "write key1 in main".to_string(),
                 caller: None,
                 function: Some("main_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 storage_key: Some("key1".to_string()),
                 storage_value: Some("value1".to_string()),
                 address: None,
@@ -1698,7 +1705,7 @@ mod tests {
                 kind: DynamicTraceEventKind::Authorization,
                 message: "authorized G_ALICE".to_string(),
                 function: Some("test_function".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 address: Some("G_ALICE_ADDRESS_1234567890123456789012345678901234567890123456".to_string()),
                 storage_key: None,
                 storage_value: None,
@@ -1711,7 +1718,7 @@ mod tests {
                 function: Some("test_function".to_string()),
                 storage_key: Some("data:G_BOB_ADDRESS_1234567890123456789012345678901234567890123456".to_string()),
                 storage_value: Some("value".to_string()),
-                call_depth: Some(0),
+                call_depth: 0,
                 address: None,
                 caller: None,
             },
