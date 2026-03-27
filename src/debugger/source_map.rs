@@ -461,6 +461,21 @@ impl SourceMap {
         self.last_wasm_hash = None;
     }
 
+    /// Checks if the given exported function name has any source mappings.
+    pub fn function_has_source_mapped(&self, wasm_bytes: &[u8], exported_function: &str) -> bool {
+        let Ok(wasm_index) = WasmIndex::parse(wasm_bytes) else {
+            return false;
+        };
+        let Some(func_idx) = wasm_index.function_index_for_export(exported_function) else {
+            return false;
+        };
+        let bodies = &wasm_index.function_bodies;
+        let Some((range, _)) = bodies.iter().find(|(_, idx)| *idx == func_idx) else {
+            return false;
+        };
+        self.offsets.range(range.clone()).next().is_some()
+    }
+
     /// Resolve source breakpoints for a source file into exported contract functions using DWARF line mappings.
     ///
     /// This relies on:

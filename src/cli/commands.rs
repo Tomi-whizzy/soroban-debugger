@@ -109,7 +109,18 @@ fn render_symbolic_report(report: &crate::analyzer::symbolic::SymbolicReport) ->
             report.metadata.attempted_input_combinations,
             report.metadata.distinct_paths_recorded
         ),
+        format!(
+            "Coverage: {:.1}% (explored branch/function coverage)",
+            report.metadata.coverage_fraction * 100.0
+        ),
     ];
+
+    if !report.metadata.uncovered_regions.is_empty() {
+        lines.push(format!(
+            "Uncovered regions: {}",
+            report.metadata.uncovered_regions.join(", ")
+        ));
+    }
 
     if report.metadata.truncation_reasons.is_empty() {
         lines.push("Truncation: none".to_string());

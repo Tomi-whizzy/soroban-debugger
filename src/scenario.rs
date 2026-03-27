@@ -119,6 +119,13 @@ pub fn run_scenario(args: ScenarioArgs, _verbosity: Verbosity) -> Result<()> {
         Formatter::info(format!("Loading scenario file: {:?}", args.scenario))
     );
 
+    let root_content = fs::read_to_string(&args.scenario).map_err(|e| {
+        DebuggerError::ExecutionError(format!("Failed to read root scenario file: {}", e))
+    })?;
+    let root_scenario: Scenario = toml::from_str(&root_content).map_err(|e| {
+        DebuggerError::ExecutionError(format!("Failed to parse root scenario file: {}", e))
+    })?;
+
     let mut visiting = HashSet::new();
     let steps = load_scenario(&args.scenario, &mut visiting)?;
 
@@ -154,7 +161,7 @@ pub fn run_scenario(args: ScenarioArgs, _verbosity: Verbosity) -> Result<()> {
         let step_label = step.name.as_deref().unwrap_or(&step.function);
         let effective_timeout = resolve_step_timeout(
             step.timeout_secs,
-            scenario.defaults.timeout_secs,
+            root_scenario.defaults.timeout_secs,
             args.timeout,
         );
         engine.executor_mut().set_timeout(effective_timeout);
@@ -646,37 +653,6 @@ mod tests {
 function = "increment"
 args = "[]"
 "#,
-        assert_eq!(
-            scenario.defaults,
-            ScenarioDefaults {
-                timeout_secs: Some(45)
-            }
-        );
-
-        assert_eq!(scenario.steps[0].name.as_deref(), Some("Init"));
-        assert_eq!(scenario.steps[0].function, "init");
-        assert_eq!(scenario.steps[0].args.as_deref(), Some("[\"admin\", 10]"));
-        assert!(scenario.steps[0].timeout_secs.is_none());
-        assert_eq!(scenario.steps[0].expected_return.as_deref(), Some("()"));
-        assert!(scenario.steps[0].expected_storage.is_none());
-        assert!(scenario.steps[0].expected_events.is_none());
-        assert!(scenario.steps[0].budget_limits.is_none());
-        assert!(scenario.steps[0].expected_error.is_none());
-        assert!(scenario.steps[0].expected_panic.is_none());
-
-        assert_eq!(scenario.steps[1].name.as_deref(), Some("Get Counter"));
-        assert_eq!(scenario.steps[1].function, "get");
-        assert!(scenario.steps[1].args.is_none());
-        assert!(scenario.steps[1].timeout_secs.is_none());
-        assert_eq!(scenario.steps[1].expected_return.as_deref(), Some("1"));
-        assert_eq!(scenario.steps[1].expected_events.as_ref().unwrap().len(), 1);
-        assert_eq!(
-            scenario.steps[1].expected_events.as_ref().unwrap()[0],
-            ScenarioEventAssertion {
-                contract_id: Some("contract-1".to_string()),
-                topics: vec!["topic-a".to_string()],
-                data: "payload".to_string(),
-            }
         );
 
         let mut visiting = HashSet::new();

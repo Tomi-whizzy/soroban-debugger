@@ -183,6 +183,29 @@ When execution is paused:
 - Long string values are truncated with a `(truncated, expand)` hint; expanding reveals the full value.
 - Typed argument annotations like `{"type":"bytes","value":"0x..."}` render as `bytes(n)` previews; expanding shows hex/base64/utf8 details.
 
+#### Searching and Paging Large Storage
+
+For contracts with many storage keys, you can search and page through storage entries in the **Debug Console** (when paused):
+
+| Command | Description |
+| --- | --- |
+| `storage.search <query>` | Filter storage entries by key or value substring (case-insensitive). Returns matching entries with expandable details. |
+| `storage.page <N>` | View page N of storage entries (1-based). Entries are sorted alphabetically and served in configurable page sizes. |
+| `storage.count` | Display the total number of storage entries. |
+| `storage.<key>` | Retrieve the value of a specific storage key. |
+
+Example usage in the Debug Console:
+```
+storage.count
+→ 1250 storage entries
+
+storage.search balance
+→ Found 3 match(es)
+
+storage.page 5
+→ Page 5/13 (1250 total entries)
+```
+
 ### Using the Call Stack
 
 The **Call Stack** panel shows:

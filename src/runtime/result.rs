@@ -1,4 +1,4 @@
-﻿//! Result types and formatting utilities for contract execution.
+//! Result types and formatting utilities for contract execution.
 //!
 //! This module defines the data structures that capture the outcome of a
 //! contract function invocation, including execution traces, storage diffs,
@@ -112,6 +112,24 @@ pub(super) fn format_invocation_result(
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum RuntimeError {
+    Timeout { elapsed_ms: u64, limit_ms: u64 },
+    Cancelled { reason: String },
+}
+
+impl std::fmt::Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeError::Timeout { elapsed_ms, limit_ms } => {
+                write!(f, "Execution timed out after {}ms (limit: {}ms)", elapsed_ms, limit_ms)
+            }
+            RuntimeError::Cancelled { reason } => {
+                write!(f, "Execution cancelled: {}", reason)
+            }
+        }
+    }
+}
 
 impl RuntimeError {
     /// Create a timeout error with elapsed and limit durations.

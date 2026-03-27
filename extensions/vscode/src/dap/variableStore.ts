@@ -153,6 +153,86 @@ export class VariableStore {
       .map(([name, value]) => this.toVariable(name, value));
   }
 
+  /**
+   * Search/filter storage entries by key or value substring.
+   * Supports large snapshots by returning only matching entries.
+   */
+  searchStorage(
+    storage: Record<string, unknown>,
+    query: string,
+    options: { maxResults?: number; caseSensitive?: boolean } = {}
+  ): { variables: Variable[]; totalMatches: number; truncated: boolean } {
+    const maxResults = options.maxResults ?? 200;
+    const caseSensitive = options.caseSensitive ?? false;
+    const normalizedQuery = caseSensitive ? query : query.toLowerCase();
+
+    const matches: [string, unknown][] = [];
+    let totalMatches = 0;
+
+    for (const [key, value] of Object.entries(storage)) {
+      const normalizedKey = caseSensitive ? key : key.toLowerCase();
+      const normalizedValue = caseSensitive
+        ? safeStringify(value)
+        : safeStringify(value).toLowerCase();
+
+      if (normalizedKey.includes(normalizedQuery) || normalizedValue.includes(normalizedQuery)) {
+        totalMatches++;
+        if (matches.length < maxResults) {
+          matches.push([key, value]);
+        }
+      }
+    }
+
+    matches.sort(([a], [b]) => a.localeCompare(b));
+
+    return {
+      variables: matches.map(([name, value]) => this.toVariable(name, value)),
+      totalMatches,
+      truncated: totalMatches > maxResults
+    };
+  }
+
+  /**
+   * Create a paged view of storage entries for large datasets.
+   * Returns a page of storage entries with navigation metadata.
+   */
+  pagedStorage(
+    storage: Record<string, unknown>,
+    page: number = 0,
+    pageSize?: number
+  ): { variables: Variable[]; page: number; totalPages: number; totalEntries: number } {
+    const effectivePageSize = pageSize ?? this.pageSize;
+    const entries = Object.entries(storage).sort(([a], [b]) => a.localeCompare(b));
+    const totalEntries = entries.length;
+    const totalPages = Math.max(1, Math.ceil(totalEntries / effectivePageSize));
+    const safePage = Math.max(0, Math.min(page, totalPages - 1));
+    const start = safePage * effectivePageSize;
+    const end = Math.min(start + effectivePageSize, totalEntries);
+
+    const pageEntries = entries.slice(start, end);
+    const variables = pageEntries.map(([name, value]) => this.toVariable(name, value));
+
+    // Add navigation hints
+    if (safePage > 0) {
+      variables.unshift({
+        name: '⬆ Previous page',
+        value: `Page ${safePage}/${totalPages}`,
+        type: 'pager',
+        variablesReference: 0
+      });
+    }
+    if (safePage < totalPages - 1) {
+      variables.push({
+        name: '⬇ Next page',
+        value: `Page ${safePage + 2}/${totalPages}`,
+        type: 'pager',
+        variablesReference: 0
+      });
+    }
+
+    return { variables, page: safePage, totalPages, totalEntries };
+  }
+
   toVariable(name: string, value: unknown): Variable {
     if (value === null || value === undefined) {
       return { name, value: String(value), type: 'null', variablesReference: 0 };

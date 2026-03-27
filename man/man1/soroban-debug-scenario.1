@@ -1,19 +1,12 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH scenario 1  "scenario "
+.TH scenario 1  "scenario " 
 .SH NAME
 scenario \- Run a multi\-step scenario from a TOML file
 .SH SYNOPSIS
-\fBscenario\fR <\fB\-\-scenario\fR> <\fB\-c\fR|\fB\-\-contract\fR> [\fB\-\-storage\fR] [\fB\-h\fR|\fB\-\-help\fR]
 \fBscenario\fR <\fB\-\-scenario\fR> <\fB\-c\fR|\fB\-\-contract\fR> [\fB\-\-storage\fR] [\fB\-\-timeout\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
-Run a multi\-step scenario from a TOML file.
-.PP
-Scenario files may include shared step fragments from other TOML files using the
-\fBinclude\fR key.  Included files are resolved relative to the directory that
-contains the referencing file, processed recursively, and their steps are
-prepended before the steps of the including file.  Circular includes are detected
-and reported as errors.
+Run a multi\-step scenario from a TOML file
 .SH OPTIONS
 .TP
 \fB\-\-scenario\fR \fI<SCENARIO>\fR
@@ -30,24 +23,3 @@ Default execution timeout in seconds for steps that do not override it. Use 0 to
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help
-.SH SCENARIO FILE FORMAT
-A scenario TOML file contains an optional \fBinclude\fR array and a list of
-\fB[[steps]]\fR entries.
-.PP
-.nf
-# Optional: import shared setup steps from other files
-include = ["shared/auth_setup.toml", "shared/bootstrap.toml"]
-
-[[steps]]
-name     = "Increment counter"
-function = "increment"
-args     = "[]"
-expected_return = "I64(1)"
-.fi
-.PP
-Each entry in \fBinclude\fR is a path relative to the directory of the current
-file.  Includes are resolved depth\-first; the steps from included files appear
-before the steps of the including file.
-.SH CYCLE DETECTION
-If file A includes file B and file B includes file A (directly or transitively),
-the runner will report an error and abort rather than looping indefinitely.

@@ -45,6 +45,7 @@ struct FunctionSignatureJson {
     params: Vec<FunctionParam>,
     #[serde(skip_serializing_if = "Option::is_none")]
     return_type: Option<String>,
+    has_source_debug: bool,
 }
 
 #[derive(Serialize)]
@@ -72,18 +73,24 @@ struct FullReport {
 
 fn output_functions(path: &Path, wasm_bytes: &[u8], format: OutputFormat) -> Result<()> {
     let signatures = parse_function_signatures(wasm_bytes)?;
+    let mut source_map = crate::debugger::source_map::SourceMap::new();
+    let _ = source_map.load(wasm_bytes);
 
     match format {
         OutputFormat::Json => {
             let functions = signatures
                 .into_iter()
-                .map(|sig| FunctionSignatureJson {
-                    name: sig.name,
-                    params: sig.params.into_iter().map(|p| FunctionParam {
-                        name: p.name,
-                        type_name: p.type_name,
-                    }).collect(),
-                    return_type: sig.return_type.filter(|r| r != "Void"),
+                .map(|sig| {
+                    let has_debug = source_map.function_has_source_mapped(wasm_bytes, &sig.name);
+                    FunctionSignatureJson {
+                        name: sig.name,
+                        params: sig.params.into_iter().map(|p| FunctionParam {
+                            name: p.name,
+                            type_name: p.type_name,
+                        }).collect(),
+                        return_type: sig.return_type.filter(|r| r != "Void"),
+                        has_source_debug: has_debug,
+                    }
                 })
                 .collect();
 
@@ -95,11 +102,11 @@ fn output_functions(path: &Path, wasm_bytes: &[u8], format: OutputFormat) -> Res
             println!("{}", serde_json::to_string_pretty(&listing)?);
             Ok(())
         }
-        OutputFormat::Pretty => print_pretty_functions(&signatures, wasm_bytes),
+        OutputFormat::Pretty => print_pretty_functions(&signatures, wasm_bytes, &source_map),
     }
 }
 
-fn print_pretty_functions(signatures: &[crate::utils::wasm::FunctionSignature], wasm_bytes: &[u8]) -> Result<()> {
+fn print_pretty_functions(signatures: &[crate::utils::wasm::FunctionSignature], wasm_bytes: &[u8], source_map: &crate::debugger::source_map::SourceMap) -> Result<()> {
     if signatures.is_empty() {
         let functions = parse_functions(wasm_bytes).unwrap_or_default();
         if functions.is_empty() {
@@ -107,13 +114,15 @@ fn print_pretty_functions(signatures: &[crate::utils::wasm::FunctionSignature], 
         } else {
             println!("(no contractspecv0 section found)\nBare functions exported:");
             for f in functions {
-                println!("  {}", f);
+                let has_debug = source_map.function_has_source_mapped(wasm_bytes, &f);
+                let debug_str = if has_debug { " (Source/Debug: Yes)" } else { "" };
+                println!("  {}{}", f, debug_str);
             }
         }
     } else {
-        let name_w = signatures.iter().map(|s| s.name.len()).max().unwrap_or(8);
-        println!("{:<name_w$}  Signature", "Function", name_w = name_w);
-        println!("{}  {}", "─".repeat(name_w), "─".repeat(BAR_WIDTH - name_w - 4));
+        let name_w = std::cmp::max(signatures.iter().map(|s| s.name.len()).max().unwrap_or(8), 8);
+        println!("{:<name_w$}  {:<45}  Source/Debug", "Function", "Signature", name_w = name_w);
+        println!("{}  {}  {}", "─".repeat(name_w), "─".repeat(45), "─".repeat(12));
 
         for sig in signatures {
             let params = sig.params.iter()
@@ -124,7 +133,12 @@ fn print_pretty_functions(signatures: &[crate::utils::wasm::FunctionSignature], 
                 .filter(|t| t != "Void")
                 .map(|t| format!(" -> {t}"))
                 .unwrap_or_default();
-            println!("{:<name_w$}  ({}){ret}", sig.name, params, name_w = name_w);
+            
+            let sig_str = format!("({}){}", params, ret);
+            let has_debug = source_map.function_has_source_mapped(wasm_bytes, &sig.name);
+            let debug_str = if has_debug { "Yes" } else { "No" };
+            
+            println!("{:<name_w$}  {:<45}  {}", sig.name, sig_str, debug_str, name_w = name_w);
         }
     }
     Ok(())

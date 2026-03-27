@@ -1,4 +1,4 @@
-﻿import {
+import {
   DebugSession,
   InitializedEvent,
   StoppedEvent,
@@ -380,6 +380,58 @@ export class SorobanDebugSession extends DebugSession {
       if (expression === 'storage' || expression === 'Storage') {
         response.body = {
           result: JSON.stringify(this.state.storage || {}),
+          variablesReference: 0
+        };
+        this.sendResponse(response);
+        return;
+      }
+
+      if (expression.startsWith('storage.search ')) {
+        const query = expression.slice('storage.search '.length).trim();
+        if (!query) {
+          throw new Error('Usage: storage.search <query>');
+        }
+        const storageData = this.state.storage as Record<string, unknown> ?? {};
+        const searchResult = this.variableStore.searchStorage(storageData, query);
+        const matchVars = searchResult.variables;
+        const ref = matchVars.length > 0
+          ? this.variableStore.createListHandle(matchVars)
+          : 0;
+        const summary = searchResult.truncated
+          ? `Found ${searchResult.totalMatches} matches (showing first ${matchVars.length})`
+          : `Found ${searchResult.totalMatches} match(es)`;
+        response.body = {
+          result: summary,
+          variablesReference: ref
+        };
+        this.sendResponse(response);
+        return;
+      }
+
+      if (expression.startsWith('storage.page ')) {
+        const pageStr = expression.slice('storage.page '.length).trim();
+        const pageNum = parseInt(pageStr, 10);
+        if (isNaN(pageNum) || pageNum < 1) {
+          throw new Error('Usage: storage.page <number> (1-based)');
+        }
+        const storageData = this.state.storage as Record<string, unknown> ?? {};
+        const pageResult = this.variableStore.pagedStorage(storageData, pageNum - 1);
+        const ref = pageResult.variables.length > 0
+          ? this.variableStore.createListHandle(pageResult.variables)
+          : 0;
+        response.body = {
+          result: `Page ${pageResult.page + 1}/${pageResult.totalPages} (${pageResult.totalEntries} total entries)`,
+          variablesReference: ref
+        };
+        this.sendResponse(response);
+        return;
+      }
+
+      if (expression === 'storage.count') {
+        const storageData = this.state.storage as Record<string, unknown> ?? {};
+        const count = Object.keys(storageData).length;
+        response.body = {
+          result: `${count} storage entries`,
           variablesReference: 0
         };
         this.sendResponse(response);
