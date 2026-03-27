@@ -839,8 +839,8 @@ async function runDapHappyPathE2E(
     )
     assert.equal(
       setBps.body?.breakpoints?.[0]?.verified,
-      true,
-      'Expected breakpoint to verify'
+      false,
+      'Expected heuristic source mapping to be unverified'
     )
 
     const configDone = await client.request('configurationDone', {})
