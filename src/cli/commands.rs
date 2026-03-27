@@ -875,8 +875,7 @@ pub fn run(args: RunArgs, verbosity: Verbosity) -> Result<()> {
     }
 
     if args.is_json_output() {
-        let mut output = serde_json::json!({
-            "status": "success",
+        let mut result_obj = serde_json::json!({
             "result": result,
             "sha256": wasm_hash,
             "budget": {
@@ -887,13 +886,13 @@ pub fn run(args: RunArgs, verbosity: Verbosity) -> Result<()> {
         });
 
         if let Some(ref events) = json_events {
-            output["events"] = EventInspector::to_json_value(events);
+            result_obj["events"] = EventInspector::to_json_value(events);
         }
         if let Some(auth_tree) = json_auth {
-            output["auth"] = crate::inspector::auth::AuthInspector::to_json_value(&auth_tree);
+            result_obj["auth"] = crate::inspector::auth::AuthInspector::to_json_value(&auth_tree);
         }
         if !mock_calls.is_empty() {
-            output["mock_calls"] = serde_json::Value::Array(
+            result_obj["mock_calls"] = serde_json::Value::Array(
                 mock_calls
                     .iter()
                     .map(|entry| {
@@ -909,15 +908,34 @@ pub fn run(args: RunArgs, verbosity: Verbosity) -> Result<()> {
             );
         }
         if let Some(ref ledger) = json_ledger {
-            output["ledger_entries"] = ledger.to_json();
+            result_obj["ledger_entries"] = ledger.to_json();
         }
+
+        let output = serde_json::json!({
+            "schema_version": crate::output::SCHEMA_VERSION,
+            "command": "run",
+            "status": "success",
+            "result": result_obj,
+            "sha256": wasm_hash,
+            "budget": {
+                "cpu_instructions": budget.cpu_instructions,
+                "memory_bytes": budget.memory_bytes,
+            },
+            "storage_diff": storage_diff,
+            "error": serde_json::Value::Null
+        });
 
         match serde_json::to_string_pretty(&output) {
             Ok(json) => println!("{}", json),
             Err(e) => {
                 let err_output = serde_json::json!({
+                    "schema_version": crate::output::SCHEMA_VERSION,
+                    "command": "run",
                     "status": "error",
-                    "errors": [format!("Failed to serialize output: {}", e)]
+                    "result": serde_json::Value::Null,
+                    "error": {
+                        "message": format!("Failed to serialize output: {}", e)
+                    }
                 });
                 if let Ok(err_json) = serde_json::to_string_pretty(&err_output) {
                     println!("{}", err_json);
@@ -1159,11 +1177,11 @@ fn display_instruction_counts(counts: &crate::runtime::executor::InstructionCoun
 
 /// Execute the upgrade-check command
 pub fn upgrade_check(args: UpgradeCheckArgs) -> Result<()> {
-    println!("Loading old contract: {:?}", args.old);
+    print_info(format!("Loading old contract: {:?}", args.old));
     let old_wasm = fs::read(&args.old)
         .map_err(|e| miette::miette!("Failed to read old WASM file {:?}: {}", args.old, e))?;
 
-    println!("Loading new contract: {:?}", args.new);
+    print_info(format!("Loading new contract: {:?}", args.new));
     let new_wasm = fs::read(&args.new)
         .map_err(|e| miette::miette!("Failed to read new WASM file {:?}: {}", args.new, e))?;
 
@@ -1181,15 +1199,18 @@ pub fn upgrade_check(args: UpgradeCheckArgs) -> Result<()> {
         UpgradeAnalyzer::analyze(&old_wasm, &new_wasm, &old_path, &new_path, execution_diffs)?;
 
     let output = match args.output.as_str() {
-        "json" => serde_json::to_string_pretty(&report)
-            .map_err(|e| miette::miette!("Failed to serialize report: {}", e))?,
+        "json" => {
+            let envelope = crate::output::VersionedOutput::success("upgrade-check", &report);
+            serde_json::to_string_pretty(&envelope)
+                .map_err(|e| miette::miette!("Failed to serialize report: {}", e))?
+        }
         _ => format_text_report(&report),
     };
 
     if let Some(out_file) = &args.output_file {
         fs::write(out_file, &output)
             .map_err(|e| miette::miette!("Failed to write report to {:?}: {}", out_file, e))?;
-        println!("Report written to {:?}", out_file);
+        print_success(format!("Report written to {:?}", out_file));
     } else {
         println!("{}", output);
     }
@@ -1960,6 +1981,30 @@ pub fn inspect(args: InspectArgs, _verbosity: Verbosity) -> Result<()> {
     }
 
     let info = crate::utils::wasm::get_module_info(&bytes)?;
+    if args.format == OutputFormat::Json {
+        let exported_functions = if args.functions {
+            Some(crate::utils::wasm::parse_function_signatures(&bytes)?)
+        } else {
+            None
+        };
+        let result = serde_json::json!({
+            "contract": args.contract.display().to_string(),
+            "size_bytes": info.total_size,
+            "types": info.type_count,
+            "functions": info.function_count,
+            "exports": info.export_count,
+            "exported_functions": exported_functions,
+        });
+        let envelope = crate::output::VersionedOutput::success("inspect", result);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&envelope).map_err(|e| {
+                DebuggerError::FileError(format!("Failed to serialize inspect JSON output: {}", e))
+            })?
+        );
+        return Ok(());
+    }
+
     println!("Contract: {:?}", args.contract);
     println!("Size: {} bytes", info.total_size);
     println!("Types: {}", info.type_count);
@@ -2146,12 +2191,15 @@ pub fn analyze(args: AnalyzeArgs, _verbosity: Verbosity) -> Result<()> {
 
     match args.format.to_lowercase().as_str() {
         "text" => println!("{}", render_security_report(&output)),
-        "json" => println!(
-            "{}",
-            serde_json::to_string_pretty(&output).map_err(|e| {
-                DebuggerError::FileError(format!("Failed to serialize analysis output: {}", e))
-            })?
-        ),
+        "json" => {
+            let envelope = crate::output::VersionedOutput::success("analyze", &output);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&envelope).map_err(|e| {
+                    DebuggerError::FileError(format!("Failed to serialize analysis output: {}", e))
+                })?
+            );
+        }
         other => {
             return Err(DebuggerError::InvalidArguments(format!(
                 "Unsupported --format '{}'. Use 'text' or 'json'.",
