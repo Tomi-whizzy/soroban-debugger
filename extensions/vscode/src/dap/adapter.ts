@@ -198,7 +198,7 @@ export class SorobanDebugSession extends DebugSession {
         source,
         managedBreakpoints.filter((bp) => {
           const match = resolved.find((resolvedBreakpoint) => resolvedBreakpoint.line === bp.line);
-          return Boolean(match?.verified && bp.functionName);
+          return Boolean(match?.setBreakpoint && bp.functionName);
         })
       );
       const syncMessage = syncErrors.size > 0
