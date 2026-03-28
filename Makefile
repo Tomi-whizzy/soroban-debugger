@@ -3,6 +3,7 @@
 # Targets:
 #   regen-man   Regenerate all man pages from current CLI source
 #   check-man   Verify committed man pages match generated output (used in CI)
+#   test-man-tmpdir  Run portability tests for man page temp directory handling
 #   fmt         Check Rust formatting
 #   lint        Run Rust clippy lints (strict)
 #   lint-strict Run Rust clippy with CI-equivalent strict flags
@@ -12,7 +13,7 @@
 #   test-vscode Run VS Code extension tests
 #   ci-local    Run all practical gates developers must satisfy before pushing
 
-.PHONY: all build fmt lint lint-strict hooks-install hooks-check test-rust test-vscode ci-local clean regen-man check-man
+.PHONY: all build fmt lint lint-strict hooks-install hooks-check test-rust test-vscode ci-local clean regen-man check-man test-man-tmpdir
 
 all: build
 
@@ -50,8 +51,15 @@ regen-man:
 
 # Verify committed man pages match generated output.
 # Exits non-zero with a diff if drift is detected.
+# Environment: TMPDIR can be exported to override temp directory for restricted environments.
+#   Usage: export TMPDIR=/custom/tmp && make check-man
+#   or:    TMPDIR=/custom/tmp bash scripts/check_manpages.sh
 check-man:
 	@bash scripts/check_manpages.sh
+
+# Test portability of man page generation across different temp directory configurations.
+test-man-tmpdir:
+	@bash scripts/test_manpage_tmpdir.sh
 
 # The single local entrypoint for developers
 ci-local: fmt lint test-rust test-vscode check-man

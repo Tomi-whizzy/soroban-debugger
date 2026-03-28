@@ -24,6 +24,12 @@ Use this for:
   - Pass criteria: exit code 0 (no warnings)
 - Tests: `cargo test --workspace --all-features`
   - Pass criteria: exit code 0
+- Man pages: `make check-man` (or `TMPDIR=/tmp make check-man` in restricted environments)
+  - Pass criteria: exit code 0 (no drift between committed and generated man pages)
+  - Notes:
+    - Man pages are regenerated via `cargo build` during the check
+    - If drift is detected, run `make regen-man` and commit the updated `.1` files
+    - TMPDIR can be set to override temp directory location (useful in CI or sandbox environments)
 
 ### Security analyzer sanity
 
