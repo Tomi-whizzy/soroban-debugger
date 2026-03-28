@@ -159,7 +159,8 @@
     "ci": "npm run build && npm run test",
     "test:all": "node ./dist/test/runTest.js",
     "test:smoke": "node ./dist/test/runSmokeTest.js",
-    "test:dap-e2e": "node ./dist/test/runDapE2E.js"
+    "test:dap-e2e": "node ./dist/test/runDapE2E.js",
+    "test:dap-e2e:repeat": "node ./dist/test/runDapE2E.js --repeat 10"
   },
   "devDependencies": {
     "@types/node": "^20.19.37",
