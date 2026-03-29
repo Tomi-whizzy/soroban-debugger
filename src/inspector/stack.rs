@@ -43,15 +43,29 @@ impl CallStackInspector {
         &self.stack
     }
 
-    /// Display the call stack
+    /// Display the call stack.
+    ///
+    /// Delegates to [`CallStackInspector::display_frames`] so that callers
+    /// holding a `MutexGuard` over the state can pass an already-borrowed
+    /// slice without any risk of re-acquiring the same lock inside this path.
     pub fn display(&self) {
-        if self.stack.is_empty() {
+        Self::display_frames(&self.stack);
+    }
+
+    /// Render `frames` to the log output.
+    ///
+    /// Accepts a plain slice so this function cannot acquire any lock —
+    /// callers that already hold a `MutexGuard<DebugState>` can safely pass
+    /// `state.call_stack().get_stack()` and the borrow checker enforces that
+    /// no second lock acquisition is possible through this path.
+    pub fn display_frames(frames: &[CallFrame]) {
+        if frames.is_empty() {
             tracing::info!("Call stack is empty");
             return;
         }
 
         crate::logging::log_display("Call Stack:", crate::logging::LogLevel::Info);
-        for (i, frame) in self.stack.iter().enumerate() {
+        for (i, frame) in frames.iter().enumerate() {
             let indent = "  ".repeat(i);
             let contract_ctx = if let Some(ref id) = frame.contract_id {
                 format!(" [{}]", id)
@@ -65,7 +79,7 @@ impl CallStackInspector {
                 "".to_string()
             };
 
-            if i == self.stack.len() - 1 {
+            if i == frames.len() - 1 {
                 crate::logging::log_display(
                     format!(
                         "{}→ {}{}{}",

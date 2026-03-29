@@ -144,7 +144,9 @@ impl DebuggerUI {
             }
             "stack" => {
                 if let Ok(state) = self.engine.state().lock() {
-                    state.call_stack().display();
+                    crate::inspector::CallStackInspector::display_frames(
+                        state.call_stack().get_stack(),
+                    );
                 }
             }
             "budget" => {
@@ -230,7 +232,9 @@ impl DebuggerUI {
                 );
             }
             crate::logging::log_display("", crate::logging::LogLevel::Info);
-            state.call_stack().display();
+            crate::inspector::CallStackInspector::display_frames(
+                state.call_stack().get_stack(),
+            );
         } else {
             crate::logging::log_display("State unavailable", crate::logging::LogLevel::Info);
         }
