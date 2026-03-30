@@ -125,6 +125,10 @@
                 "description": "Repeat execution N times and show throughput/latency stats in the Debug Console.",
                 "minimum": 1,
                 "default": 1
+              },
+              "batchArgs": {
+                "type": "string",
+                "description": "Path to a JSON file containing an array of argument sets for batch execution. Each entry is executed as a separate run with its own args."
               }
             }
           },

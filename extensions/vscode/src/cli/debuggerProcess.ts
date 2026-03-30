@@ -35,6 +35,11 @@ export interface DebuggerProcessConfig {
   spawnServer?: boolean;
   storageFilter?: string[];
   repeat?: number;
+  /**
+   * Path to a JSON file containing an array of argument sets for batch
+   * execution.  Each entry is passed as `args` to a separate Execute request.
+   */
+  batchArgs?: string;
 }
 
 export interface DebuggerExecutionResult {
@@ -104,7 +109,8 @@ export interface LaunchPreflightIssue {
     | "args"
     | "port"
     | "host"
-    | "token";
+    | "token"
+    | "batchArgs";
   message: string;
   expected: string;
   quickFixes: LaunchPreflightQuickFix[];
@@ -521,6 +527,42 @@ export class DebuggerProcess {
       paused: response.paused,
       completed: response.completed,
     };
+  }
+
+  async executeBatch(
+    batchItems: unknown[][]
+  ): Promise<{ index: number; args: unknown[]; output: string; success: boolean; error?: string }[]> {
+    const results: { index: number; args: unknown[]; output: string; success: boolean; error?: string }[] = [];
+    const entrypoint = this.config.entrypoint || "main";
+
+    for (let i = 0; i < batchItems.length; i++) {
+      const args = batchItems[i];
+      try {
+        const response = await this.sendRequest({
+          type: "Execute",
+          function: entrypoint,
+          args: args.length > 0 ? JSON.stringify(args) : undefined,
+        });
+        this.expectResponse(response, "ExecutionResult");
+        results.push({
+          index: i,
+          args,
+          output: response.output || "",
+          success: response.success !== false,
+          error: response.error,
+        });
+      } catch (err) {
+        results.push({
+          index: i,
+          args,
+          output: "",
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return results;
   }
 
   async stepIn(): Promise<{
@@ -1213,6 +1255,24 @@ export async function validateLaunchConfig(
         message:
           "Launch config field 'token' must be a single-line non-empty string.",
         expected: "A non-empty authentication token without line breaks.",
+        quickFixes: ["openLaunchConfig"],
+      });
+    }
+  }
+
+  if (config.batchArgs !== undefined) {
+    if (typeof config.batchArgs !== "string" || config.batchArgs.trim().length === 0) {
+      issues.push({
+        field: "batchArgs",
+        message: "Launch config field 'batchArgs' must be a path to a readable JSON file.",
+        expected: "A readable JSON file containing an array of argument sets.",
+        quickFixes: ["openLaunchConfig"],
+      });
+    } else if (!looksLikeVariableReference(config.batchArgs) && !fs.existsSync(config.batchArgs)) {
+      issues.push({
+        field: "batchArgs",
+        message: `Launch config field 'batchArgs' points to '${config.batchArgs}', which does not exist.`,
+        expected: "A readable JSON file containing an array of argument sets.",
         quickFixes: ["openLaunchConfig"],
       });
     }

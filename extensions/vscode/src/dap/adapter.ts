@@ -5,6 +5,7 @@ import {
   ExitedEvent
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
+import * as fs from 'fs';
 import * as readline from 'readline';
 import {
   DebuggerProcess,
@@ -107,6 +108,7 @@ export class SorobanDebugSession extends DebugSession {
   private refreshAbortController: AbortController | null = null;
   private refreshGeneration = 0;
   private launchLifecycleReporter?: (event: LaunchLifecycleEvent) => void;
+  private batchArgsPath?: string;
 
   constructor(
     logManagerOrLinesStartAt1?: LogManager | boolean,
@@ -167,10 +169,12 @@ export class SorobanDebugSession extends DebugSession {
         requestTimeoutMs: args.requestTimeoutMs,
         connectTimeoutMs: args.connectTimeoutMs,
         storageFilter: args.storageFilter,
-        repeat: args.repeat
+        repeat: args.repeat,
+        batchArgs: args.batchArgs
       }, this.logManager, this.launchLifecycleReporter);
 
       await this.debuggerProcess.start();
+      this.batchArgsPath = args.batchArgs;
       this.state.isRunning = true;
       this.state.isPaused = false;
       this.hasExecuted = false;
@@ -753,6 +757,11 @@ export class SorobanDebugSession extends DebugSession {
       throw new Error('Debugger process is not running');
     }
 
+    if (this.batchArgsPath) {
+      await this.runBatchExecution();
+      return;
+    }
+
     const result = await this.debuggerProcess.execute();
     this.hasExecuted = true;
     await this.refreshState();
@@ -768,6 +777,54 @@ export class SorobanDebugSession extends DebugSession {
 
     this.state.isPaused = false;
     this.sendEvent(new ExitedEvent(0));
+    await this.stop();
+  }
+
+  private async runBatchExecution(): Promise<void> {
+    if (!this.debuggerProcess || !this.batchArgsPath) {
+      throw new Error('Batch execution requires a debugger process and batch-args path');
+    }
+
+    const raw = fs.readFileSync(this.batchArgsPath, 'utf-8');
+    const batchItems: unknown[][] = JSON.parse(raw);
+
+    if (!Array.isArray(batchItems)) {
+      throw new Error('batch-args file must contain a JSON array of argument sets');
+    }
+
+    this.sendEvent(new LogOutputEvent(
+      `\n=== Batch Execution: ${batchItems.length} test case(s) ===\n\n`,
+      LogLevel.Log
+    ));
+
+    const results = await this.debuggerProcess.executeBatch(batchItems);
+    this.hasExecuted = true;
+
+    let passed = 0;
+    let failed = 0;
+    for (const r of results) {
+      const status = r.success ? 'PASS' : 'FAIL';
+      if (r.success) { passed++; } else { failed++; }
+      const argsStr = JSON.stringify(r.args);
+      this.sendEvent(new LogOutputEvent(
+        `[${r.index + 1}/${batchItems.length}] ${status} args=${argsStr}`,
+        r.success ? LogLevel.Log : LogLevel.Error
+      ));
+      if (r.output) {
+        this.sendEvent(new LogOutputEvent(`  Result: ${r.output}\n`, LogLevel.Log));
+      }
+      if (r.error) {
+        this.sendEvent(new LogOutputEvent(`  Error: ${r.error}\n`, LogLevel.Error));
+      }
+    }
+
+    this.sendEvent(new LogOutputEvent(
+      `\n=== Batch Summary: ${passed} passed, ${failed} failed, ${batchItems.length} total ===\n`,
+      LogLevel.Log
+    ));
+
+    this.state.isPaused = false;
+    this.sendEvent(new ExitedEvent(failed > 0 ? 1 : 0));
     await this.stop();
   }
 

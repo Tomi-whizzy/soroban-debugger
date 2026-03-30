@@ -90,7 +90,7 @@ Legend:
 
 | Feature | CLI flag / command | VS Code Extension | Notes |
 |---|---|---|---|
-| Batch arguments from file | `--batch-args <file.json>` | NO | No `batchArgs` field in `launch.json`. |
+| Batch arguments from file | `--batch-args <file.json>` | YES — `"batchArgs"` in `launch.json` | Each argument set is executed separately; results and summary shown in Debug Console. |
 | Repeat execution N times | `--repeat <n>` | YES — `"repeat"` in `launch.json` | Execution runs N times; aggregate stats shown in Debug Console. |
 
 ---
@@ -133,7 +133,7 @@ For VS Code users, this table maps CLI flags to their `launch.json` equivalents.
 | `--instruction-debug` | (none) | NO |
 | `--step-instructions` | (none) | NO |
 | `--step-mode` | (none) | NO |
-| `--batch-args` | (none) | NO |
+| `--batch-args` | `batchArgs` | YES |
 | `--repeat` | `repeat` | YES |
 | `--tls-cert` / `--tls-key` | Passed via CLI arguments | YES |
 | `--import-storage` | Use `snapshotPath` instead | PARTIAL |

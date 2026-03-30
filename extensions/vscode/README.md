@@ -154,6 +154,11 @@ Create a `snapshot.json` file with the initial state for your debugger session. 
 - **connectTimeoutMs** (number): Timeout to wait for the backend server to accept connections on startup
   - Default: `10000`
 
+- **batchArgs** (string): Path to a JSON file containing an array of argument sets for batch execution. Each entry runs as a separate invocation. Results and a pass/fail summary are printed to the Debug Console.
+  - Example: `"${workspaceFolder}/tests/batch_inputs.json"`
+  - The JSON file should be an array of arrays, e.g. `[["arg1"], ["arg2", 42], []]`
+  - Known limits: batch mode skips breakpoints and stepping; use single-run mode to debug individual failing cases.
+
 ### Environment Overrides (Advanced)
 
 If you can’t (or don’t want to) set timeouts in `launch.json`, you can also use:
@@ -237,7 +242,7 @@ The following features are **not available** in the extension.
 | Instruction-level stepping  | `--instruction-debug`, `--step-instructions`, `--step-mode [block]`                            | Use `soroban-debug interactive --instruction-debug` in a terminal      |
 | Storage key filtering       | `--storage-filter <pattern>`                                                                   | All storage is shown unfiltered in the Variables panel; filter via CLI |
 | Auth tree display           | `--show-auth`                                                                                  | Use `soroban-debug run --show-auth` in a terminal                      |
-| Batch execution             | `--batch-args <file>`, `--repeat N`                                                            | Use `soroban-debug run --batch-args` in a terminal                     |
+| Batch execution             | `--batch-args <file>`, `--repeat N`                                                            | Set `"batchArgs"` in `launch.json` (see below)                         |
 | TLS configuration           | `--tls-cert`, `--tls-key`                                                                      | Use CLI server/remote commands directly                                |
 | Storage export              | `--export-storage <file>`                                                                      | Use `soroban-debug run --export-storage` in a terminal                 |
 | Storage import              | `--import-storage <file>`                                                                      | Use `snapshotPath` in `launch.json` for initial state                  |
