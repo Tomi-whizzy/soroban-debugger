@@ -225,8 +225,8 @@ impl BreakpointManager {
     pub fn on_hit(
         &mut self,
         function: &str,
-        _storage: &HashMap<String, String>,
-        _args: Option<&str>,
+        storage: &HashMap<String, String>,
+        args: Option<&str>,
     ) -> crate::Result<Option<BreakpointHit>> {
         let Some(bp) = self.breakpoints.get_mut(function) else {
             return Ok(None);
@@ -240,7 +240,13 @@ impl BreakpointManager {
             }
         }
 
-        let log_messages = bp.log_message.clone().into_iter().collect();
+        let log_messages = bp
+            .log_message
+            .as_deref()
+            .map(|template| interpolate_log_message(template, function, storage, args))
+            .transpose()?
+            .into_iter()
+            .collect();
         Ok(Some(BreakpointHit {
             should_pause: !bp.is_log_point(),
             log_messages,
@@ -317,6 +323,29 @@ pub trait ConditionEvaluator {
 
     /// Interpolate variables in a log message (e.g., "Balance is {balance}")
     fn interpolate_log(&self, template: &str) -> crate::Result<String>;
+}
+
+fn interpolate_log_message(
+    template: &str,
+    function: &str,
+    storage: &HashMap<String, String>,
+    args: Option<&str>,
+) -> crate::Result<String> {
+    let mut result = template.to_string();
+
+    for (name, value) in storage {
+        let placeholder = format!("{{{}}}", name);
+        result = result.replace(&placeholder, value);
+    }
+
+    result = result.replace("{function}", function);
+
+    if let Some(args) = args {
+        result = result.replace("{args}", args);
+        result = result.replace("{arguments}", args);
+    }
+
+    Ok(result)
 }
 
 /// Evaluate a hit condition against the current hit count
@@ -677,6 +706,50 @@ mod tests {
             .unwrap();
         assert!(!should_break); // Log points don't break
         assert_eq!(log, Some("Transfer 100 - Balance: 1500".to_string()));
+    }
+
+    #[test]
+    fn test_on_hit_interpolates_log_message() {
+        let mut manager = BreakpointManager::new();
+        manager.set(Breakpoint::log_point(
+            "transfer".to_string(),
+            "Transfer {amount} - Balance: {balance}".to_string(),
+        ));
+
+        let storage = HashMap::from([
+            ("amount".to_string(), "100".to_string()),
+            ("balance".to_string(), "1500".to_string()),
+        ]);
+
+        let hit = manager
+            .on_hit("transfer", &storage, Some("[100]"))
+            .unwrap()
+            .unwrap();
+
+        assert!(!hit.should_pause);
+        assert_eq!(
+            hit.log_messages,
+            vec!["Transfer 100 - Balance: 1500".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_on_hit_interpolates_builtin_placeholders() {
+        let mut manager = BreakpointManager::new();
+        manager.set(Breakpoint::log_point(
+            "transfer".to_string(),
+            "Function {function} args {args} arguments {arguments}".to_string(),
+        ));
+
+        let hit = manager
+            .on_hit("transfer", &HashMap::new(), Some("[1,2]"))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            hit.log_messages,
+            vec!["Function transfer args [1,2] arguments [1,2]".to_string()]
+        );
     }
 
     #[test]
