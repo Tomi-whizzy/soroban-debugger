@@ -526,8 +526,6 @@ impl ContractExecutor {
             .unwrap_or_else(|| args_json.to_string());
 
         let parser = ArgumentParser::new(self.env.clone());
-        let parser = ArgumentParser::new(self.env.clone());
-        let normalized_args_json = self.normalize_args_for_function(function, args_json)?;
 
         parser
             .parse_args_string(&normalized_args_json)
@@ -557,29 +555,7 @@ impl ContractExecutor {
             if param.type_name.starts_with("Option<") {
                 let original = arg.clone();
                 *arg = json!({ "type": "option", "value": original });
-    fn normalize_args_for_function(&self, function: &str, args_json: &str) -> Result<String> {
-        let signatures = crate::utils::wasm::parse_function_signatures(&self.wasm_bytes)?;
-        let Some(signature) = signatures.into_iter().find(|sig| sig.name == function) else {
-            return Ok(args_json.to_string());
-        };
-
-        let mut args_value: JsonValue = serde_json::from_str(args_json).map_err(|e| {
-            DebuggerError::InvalidArguments(format!("Invalid JSON in --args: {}", e))
-        })?;
-    /// Build a structured dynamic trace for security analysis.
-    pub fn get_dynamic_trace(&self) -> Result<Vec<DynamicTraceEvent>> {
-        let mut out = self.debug_env.dynamic_events().to_vec();
-
-        // Add additional diagnostic events from the host that weren't captured by hooks
-        let mut next_sequence = out.iter().map(|e| e.sequence).max().map_or(0, |n| n + 1);
-        for event in self.get_diagnostic_events().unwrap_or_default() {
-            let message = format!("{:?}", event);
-            // Skip events already captured (this is a bit heuristic)
-            if out.iter().any(|e| e.message.contains(&message) || message.contains(&e.message)) {
-                continue;
-            }
-
-            if param.type_name.starts_with("Tuple<") {
+            } else if param.type_name.starts_with("Tuple<") {
                 let original = arg.clone();
                 let arity = tuple_arity_from_type_name(&param.type_name)?;
                 *arg = json!({ "type": "tuple", "arity": arity, "value": original });
@@ -587,34 +563,20 @@ impl ContractExecutor {
         }
 
         serde_json::to_string(&args).ok()
-                let arity = tuple_arity_from_type_name(&param.type_name).ok_or_else(|| {
-                    DebuggerError::InvalidArguments(format!(
-                        "Invalid tuple type in function spec for '{}': {}",
-                        param.name, param.type_name
-                    ))
-                })?;
+    }
 
-                let JsonValue::Array(actual_arr) = arg else {
-                    return Err(DebuggerError::InvalidArguments(format!(
-                        "Argument '{}' expects tuple with {} elements, got {}",
-                        param.name,
-                        arity,
-                        json_type_name(arg)
-                    ))
-                    .into());
-                };
+    /// Build a structured dynamic trace for security analysis.
+    pub fn get_dynamic_trace(&self) -> Result<Vec<DynamicTraceEvent>> {
+        let mut out = self.debug_env.dynamic_events().to_vec();
 
-                if actual_arr.len() != arity {
-                    return Err(DebuggerError::InvalidArguments(format!(
-                        "Tuple arity mismatch: expected {}, got {}",
-                        arity,
-                        actual_arr.len()
-                    ))
-                    .into());
-                }
-
-                *arg = serde_json::json!({"type": "tuple", "arity": arity, "value": actual_arr.clone()});
+        // Add additional diagnostic events from the host that weren't captured by hooks.
+        let mut next_sequence = out.iter().map(|e| e.sequence).max().map_or(0, |n| n + 1);
+        for event in self.get_diagnostic_events().unwrap_or_default() {
+            let message = format!("{:?}", event);
+            if out.iter().any(|e| e.message.contains(&message) || message.contains(&e.message)) {
+                continue;
             }
+
             out.push(DynamicTraceEvent {
                 sequence: next_sequence,
                 kind: classify_diagnostic_event_kind(&message),
@@ -628,7 +590,7 @@ impl ContractExecutor {
         Ok(out)
     }
 
-    // â”€â”€ private helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Private helpers.
 
     fn install_mock_dispatchers(&self) -> Result<()> {
         let ids = self
