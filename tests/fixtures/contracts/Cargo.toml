@@ -1,0 +1,30 @@
+[workspace]
+members = [
+    "counter",
+    "echo",
+    "always_panic",
+    "budget_heavy",
+    "cross_contract",
+    "same_return",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.release-debug]
+inherits = "release"
+debug = 2
+strip = "none"

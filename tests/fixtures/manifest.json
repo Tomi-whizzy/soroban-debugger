@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "always_panic",
+      "exports": ["_", "panic"],
+      "source": {
+        "contract_dir": "tests/fixtures/contracts/always_panic",
+        "lib_rs": "tests/fixtures/contracts/always_panic/src/lib.rs"
+      },
+      "artifacts": {
+        "release": {
+          "path": "tests/fixtures/wasm/always_panic.wasm",
+          "sha256": "b866531c02861bc749b0bcfb39ee801c0f5b59a703980e764b8b515510c524a2"
+        }
+      }
+    },
+    {
+      "name": "budget_heavy",
+      "exports": ["_", "heavy"],
+      "source": {
+        "contract_dir": "tests/fixtures/contracts/budget_heavy",
+        "lib_rs": "tests/fixtures/contracts/budget_heavy/src/lib.rs"
+      },
+      "artifacts": {
+        "release": {
+          "path": "tests/fixtures/wasm/budget_heavy.wasm",
+          "sha256": "32e6adefbe95e83aebb1d7007f4533a5b59bb6be029bb1ec4a2d64382648960c"
+        }
+      }
+    },
+    {
+      "name": "counter",
+      "exports": ["_", "get", "increment"],
+      "source": {
+        "contract_dir": "tests/fixtures/contracts/counter",
+        "lib_rs": "tests/fixtures/contracts/counter/src/lib.rs"
+      },
+      "artifacts": {
+        "release": {
+          "path": "tests/fixtures/wasm/counter.wasm",
+          "sha256": "5be3612b8625f8a0bd7cdd12736995be4bba6726aa03ce55f33aa87f4bfd4eef"
+        }
+      }
+    },
+    {
+      "name": "cross_contract",
+      "exports": ["_", "call"],
+      "source": {
+        "contract_dir": "tests/fixtures/contracts/cross_contract",
+        "lib_rs": "tests/fixtures/contracts/cross_contract/src/lib.rs"
+      },
+      "artifacts": {
+        "release": {
+          "path": "tests/fixtures/wasm/cross_contract.wasm",
+          "sha256": "ca15b9b508f9683a93a12046013f21ea66911b3a19094c085d9a42ae14a561e2"
+        }
+      }
+    },
+    {
+      "name": "echo",
+      "exports": ["_", "echo"],
+      "source": {
+        "contract_dir": "tests/fixtures/contracts/echo",
+        "lib_rs": "tests/fixtures/contracts/echo/src/lib.rs"
+      },
+      "artifacts": {
+        "release": {
+          "path": "tests/fixtures/wasm/echo.wasm",
+          "sha256": "314f3b1bb7e2000b026a602d84ff2e0c74c147b8327561364d89f009196aa8b4"
+        }
+      }
+    }
+  ]
+}

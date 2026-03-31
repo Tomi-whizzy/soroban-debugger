@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InspectCommandOutputEnvelope",
+  "type": "object",
+  "required": ["schema_version", "command", "status", "result", "error"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "command": { "type": "string", "const": "inspect" },
+    "status": { "type": "string", "enum": ["success", "error"] },
+    "result": {
+      "type": ["object", "null"],
+      "required": ["contract", "size_bytes", "types", "functions", "exports", "exported_functions"],
+      "properties": {
+        "contract": { "type": "string" },
+        "size_bytes": { "type": "integer" },
+        "types": { "type": "integer" },
+        "functions": { "type": "integer" },
+        "exports": { "type": "integer" },
+        "exported_functions": { "type": ["array", "null"], "items": { "type": "object" } }
+      }
+    },
+    "error": {
+      "type": ["object", "null"],
+      "properties": {
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

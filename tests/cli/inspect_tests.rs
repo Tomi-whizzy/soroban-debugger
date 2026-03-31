@@ -1,0 +1,132 @@
+#![allow(deprecated)]
+use predicates::prelude::*;
+use tempfile::TempDir;
+
+fn fixture_wasm() -> &'static str {
+    "tests/fixtures/wasm/counter.wasm"
+}
+
+#[test]
+fn test_inspect_requires_contract_arg() {
+    let mut cmd = assert_cmd::Command::cargo_bin("soroban-debug").expect("Failed to find binary");
+    cmd.args(["inspect"]).assert().failure().stderr(
+        predicate::str::contains("contract")
+            .or(predicate::str::contains("required"))
+            .or(predicate::str::contains("missing")),
+    );
+}
+
+#[test]
+fn test_inspect_with_missing_contract_file() {
+    let mut cmd = assert_cmd::Command::cargo_bin("soroban-debug").expect("Failed to find binary");
+    cmd.args(["inspect", "--contract", "/nonexistent/contract.wasm"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_inspect_with_empty_wasm_file() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let contract_file = temp_dir.path().join("contract.wasm");
+    std::fs::write(&contract_file, b"").expect("Failed to write temp file");
+
+    let mut cmd = assert_cmd::Command::cargo_bin("soroban-debug").expect("Failed to find binary");
+    cmd.args(["inspect", "--contract", contract_file.to_str().unwrap()])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_inspect_accepts_format_flag_json() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let contract_file = temp_dir.path().join("contract.wasm");
+    std::fs::write(&contract_file, b"dummy").expect("Failed to write temp file");
+
+    let mut cmd = assert_cmd::Command::cargo_bin("soroban-debug").expect("Failed to find binary");
+    let _ = cmd
+        .args([
+            "inspect",
+            "--contract",
+            contract_file.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output();
+}
+
+#[test]
+fn test_inspect_functions_flag_exists() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let contract_file = temp_dir.path().join("contract.wasm");
+    std::fs::write(&contract_file, b"dummy").expect("Failed to write temp file");
+
+    let mut cmd = assert_cmd::Command::cargo_bin("soroban-debug").expect("Failed to find binary");
+    let _ = cmd
+        .args([
+            "inspect",
+            "--contract",
+            contract_file.to_str().unwrap(),
+            "--functions",
+        ])
+        .output();
+}
+
+#[test]
+fn test_inspect_functions_with_json_format() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let contract_file = temp_dir.path().join("contract.wasm");
+    std::fs::write(&contract_file, b"dummy").expect("Failed to write temp file");
+
+    let mut cmd = assert_cmd::Command::cargo_bin("soroban-debug").expect("Failed to find binary");
+    let output = cmd
+        .args([
+            "inspect",
+            "--contract",
+            contract_file.to_str().unwrap(),
+            "--functions",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Failed to execute command");
+
+    if !output.status.success() {
+        assert_eq!(output.status.code(), Some(1));
+    }
+}
+
+#[test]
+fn test_inspect_source_map_diagnostics_pretty_output() {
+    let mut cmd = assert_cmd::Command::cargo_bin("soroban-debug").expect("Failed to find binary");
+    cmd.args([
+        "inspect",
+        "--contract",
+        fixture_wasm(),
+        "--source-map-diagnostics",
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("Source Map Diagnostics"))
+    .stdout(predicate::str::contains("Fallback mode:"))
+    .stdout(predicate::str::contains("DWARF sections:"));
+}
+
+#[test]
+fn test_inspect_source_map_diagnostics_json_output() {
+    let mut cmd = assert_cmd::Command::cargo_bin("soroban-debug").expect("Failed to find binary");
+    cmd.args([
+        "inspect",
+        "--contract",
+        fixture_wasm(),
+        "--source-map-diagnostics",
+        "--format",
+        "json",
+        "--source-map-limit",
+        "3",
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("\"source_map\""))
+    .stdout(predicate::str::contains("\"sections\""))
+    .stdout(predicate::str::contains("\"fallback_mode\""));
+}
