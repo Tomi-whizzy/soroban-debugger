@@ -930,7 +930,15 @@ fn paths_match_normalized(a: &str, b: &str, filename_ambiguous: bool) -> bool {
         return true;
     }
 
-    suffix_components_match(a, b, 2)
+    let a_components = a.split('/').filter(|part| !part.is_empty()).count();
+    let b_components = b.split('/').filter(|part| !part.is_empty()).count();
+    let components_to_match = a_components.min(b_components);
+
+    if components_to_match < 2 {
+        return false;
+    }
+
+    suffix_components_match(a, b, components_to_match)
 }
 
 fn suffix_components_match(a: &str, b: &str, components: usize) -> bool {

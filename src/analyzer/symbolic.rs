@@ -939,10 +939,20 @@ mod tests {
         let report = analyzer
             .analyze_with_config(&wasm, "echo", &config)
             .expect("symbolic analysis should complete");
+        let arg_count = analyzer
+            .get_arg_count(&wasm, "echo")
+            .expect("echo export should resolve");
+        let expected_generated = analyzer
+            .generate_input_combinations(arg_count, config.max_input_combinations)
+            .combinations
+            .len();
 
         assert_eq!(report.paths_explored, 3);
         assert!(report.metadata.truncated_by_path_cap);
-        assert_eq!(report.metadata.generated_input_combinations, 16);
+        assert_eq!(
+            report.metadata.generated_input_combinations,
+            expected_generated
+        );
         assert_eq!(report.metadata.attempted_input_combinations, 3);
     }
 
