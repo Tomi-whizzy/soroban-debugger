@@ -51,11 +51,7 @@ fn test_run_server_mode_does_not_require_contract_or_function() {
     cmd.args(["run", "--server", "--port", "9229"])
         .timeout(std::time::Duration::from_secs(2))
         .assert()
-        .stderr(
-            predicate::str::contains("contract")
-                .not()
-                .and(predicate::str::contains("function").not()),
-        );
+        .stderr(predicate::str::contains("required arguments were not provided").not());
 }
 
 #[test]
@@ -67,11 +63,8 @@ fn test_run_remote_mode_does_not_require_contract_or_function() {
         .arg("--remote")
         .arg(test_remote_addr())
         .assert()
-        .stderr(
-            predicate::str::contains("contract")
-                .not()
-                .and(predicate::str::contains("function").not()),
-        );
+        .failure()
+        .stderr(predicate::str::contains("Network/transport error").or(predicate::str::contains("connect")));
 }
 
 #[test]
@@ -90,11 +83,8 @@ fn test_run_remote_mode_accepts_optional_contract_function() {
         .arg("--function")
         .arg("test")
         .assert()
-        .stderr(
-            predicate::str::contains("contract")
-                .not()
-                .and(predicate::str::contains("function").not()),
-        );
+        .failure()
+        .stderr(predicate::str::contains("Network/transport error").or(predicate::str::contains("connect")));
 }
 
 #[test]
@@ -189,11 +179,8 @@ fn test_remote_inspect_subcommand_accepted() {
         .arg(test_remote_addr())
         .arg("inspect")
         .assert()
-        .stderr(
-            predicate::str::contains("contract")
-                .not()
-                .and(predicate::str::contains("function").not()),
-        );
+        .failure()
+        .stderr(predicate::str::contains("Network/transport error").or(predicate::str::contains("connect")));
 }
 
 #[test]
@@ -204,11 +191,8 @@ fn test_remote_storage_subcommand_accepted() {
         .arg(test_remote_addr())
         .arg("storage")
         .assert()
-        .stderr(
-            predicate::str::contains("contract")
-                .not()
-                .and(predicate::str::contains("function").not()),
-        );
+        .failure()
+        .stderr(predicate::str::contains("Network/transport error").or(predicate::str::contains("connect")));
 }
 
 #[test]
@@ -221,11 +205,8 @@ fn test_remote_evaluate_subcommand_accepted() {
         .arg("--expression")
         .arg("1 + 1")
         .assert()
-        .stderr(
-            predicate::str::contains("contract")
-                .not()
-                .and(predicate::str::contains("function").not()),
-        );
+        .failure()
+        .stderr(predicate::str::contains("Network/transport error").or(predicate::str::contains("connect")));
 }
 
 #[test]
@@ -240,9 +221,6 @@ fn test_remote_evaluate_with_frame_id() {
         .arg("--frame-id")
         .arg("0")
         .assert()
-        .stderr(
-            predicate::str::contains("contract")
-                .not()
-                .and(predicate::str::contains("function").not()),
-        );
+        .failure()
+        .stderr(predicate::str::contains("Network/transport error").or(predicate::str::contains("connect")));
 }
