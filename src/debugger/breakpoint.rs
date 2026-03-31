@@ -518,10 +518,9 @@ impl Default for BreakpointManager {
 }
 
 #[cfg(test)]
- mod tests {
-    fn test_add_breakpoint() {
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     // Mock evaluator for testing
     struct MockEvaluator {
@@ -909,15 +908,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_condition_valid_structure_still_not_implemented() {
-        let result = BreakpointManager::parse_condition("balance > 1000");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not yet implemented"));
-    }
-}
     fn test_parse_condition_validation() {
         // Valid conditions
         assert!(BreakpointManager::parse_condition("balance > 1000").is_ok());
