@@ -106,6 +106,28 @@ pub fn format_global_output(formatter: &str, data: &str) -> PluginResult<Option<
     registry.format_output(formatter, data)
 }
 
+pub fn global_command_conflicts() -> HashMap<String, Vec<String>> {
+    let Some(registry) = GLOBAL_PLUGIN_REGISTRY.get() else {
+        return HashMap::new();
+    };
+
+    registry
+        .read()
+        .map(|r| r.command_conflicts().clone())
+        .unwrap_or_default()
+}
+
+pub fn global_formatter_conflicts() -> HashMap<String, Vec<String>> {
+    let Some(registry) = GLOBAL_PLUGIN_REGISTRY.get() else {
+        return HashMap::new();
+    };
+
+    registry
+        .read()
+        .map(|r| r.formatter_conflicts().clone())
+        .unwrap_or_default()
+}
+
 // ---------------------------------------------------------------------------
 // Plugin Snapshot and Reload Diff
 // ---------------------------------------------------------------------------
@@ -445,6 +467,18 @@ pub struct PluginRegistry {
 
     /// Per-plugin health state used for containment and telemetry
     health: RwLock<HashMap<String, PluginHealth>>,
+
+    /// Resolved plugin command winners, keyed by normalized command name
+    command_winners: HashMap<String, String>,
+
+    /// Resolved formatter winners, keyed by normalized formatter name
+    formatter_winners: HashMap<String, String>,
+
+    /// All providers for each normalized command name, winner first
+    command_conflicts: HashMap<String, Vec<String>>,
+
+    /// All providers for each normalized formatter name, winner first
+    formatter_conflicts: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -532,6 +566,10 @@ impl PluginRegistry {
             hot_reload_enabled: false,
             policy,
             health: RwLock::new(HashMap::new()),
+            command_winners: HashMap::new(),
+            formatter_winners: HashMap::new(),
+            command_conflicts: HashMap::new(),
+            formatter_conflicts: HashMap::new(),
         })
     }
 
@@ -586,7 +624,7 @@ impl PluginRegistry {
 
         // ── Phase 3: register in dependency order ──────────────────────────
         for plugin in sorted_plugins {
-            let name = plugin.manifest().name.clone();
+            let name = Self::plugin_registration_key(&plugin);
             match self.register_plugin(plugin) {
                 Ok(_) => {
                     info!("Successfully registered plugin: {}", name);
@@ -605,7 +643,7 @@ impl PluginRegistry {
 
     /// Register a loaded plugin
     fn register_plugin(&mut self, plugin: LoadedPlugin) -> PluginResult<()> {
-        let name = plugin.manifest().name.clone();
+        let name = Self::plugin_registration_key(&plugin);
 
         // Check for duplicates
         if self.plugins.contains_key(&name) {
@@ -635,6 +673,7 @@ impl PluginRegistry {
                 PluginError::ExecutionFailed("Failed to update plugin health".to_string())
             })?
             .insert(name, PluginHealth::default());
+        self.rebuild_command_and_formatter_maps();
         Ok(())
     }
 
@@ -643,9 +682,105 @@ impl PluginRegistry {
         self.plugins.get(name).cloned()
     }
 
+    /// Normalize a command or formatter name for conflict detection and lookup.
+    fn normalize_plugin_item_name(name: &str) -> String {
+        name.trim().to_lowercase()
+    }
+
+    /// Compute a stable plugin registration key, using manifest name when available.
+    fn plugin_registration_key(plugin: &LoadedPlugin) -> String {
+        let manifest_name = plugin.manifest().name.trim();
+        if !manifest_name.is_empty() {
+            manifest_name.to_string()
+        } else if let Some(stem) = plugin.path().file_stem() {
+            stem.to_string_lossy().to_string()
+        } else {
+            plugin.path().to_string_lossy().to_string()
+        }
+    }
+
+    /// Compute a stable precedence key for plugin sorting.
+    fn plugin_precedence_key(plugin: &LoadedPlugin) -> (String, String) {
+        let registration_key = Self::plugin_registration_key(plugin);
+        let path_key = plugin.path().to_string_lossy().to_string();
+        (registration_key.to_lowercase(), path_key)
+    }
+
     /// Get all plugin names
     pub fn plugin_names(&self) -> Vec<String> {
         self.plugins.keys().cloned().collect()
+    }
+
+    /// Rebuild command and formatter conflict maps after plugin registration changes.
+    fn rebuild_command_and_formatter_maps(&mut self) {
+        self.command_winners.clear();
+        self.formatter_winners.clear();
+        self.command_conflicts.clear();
+        self.formatter_conflicts.clear();
+
+        let mut plugins: Vec<_> = self.plugins.values().cloned().collect();
+        plugins.sort_by(|a, b| {
+            let a = a.read();
+            let b = b.read();
+            match (a, b) {
+                (Ok(a), Ok(b)) => {
+                    Self::plugin_precedence_key(&a).cmp(&Self::plugin_precedence_key(&b))
+                }
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
+
+        for plugin_arc in plugins {
+            if let Ok(plugin) = plugin_arc.read() {
+                let plugin_key = Self::plugin_registration_key(&plugin);
+
+                if plugin.manifest().capabilities.provides_commands {
+                    for command in plugin.plugin().commands() {
+                        let key = Self::normalize_plugin_item_name(&command.name);
+                        self.command_conflicts
+                            .entry(key.clone())
+                            .or_default()
+                            .push(plugin_key.clone());
+                        self.command_winners
+                            .entry(key)
+                            .or_insert_with(|| plugin_key.clone());
+                    }
+                }
+
+                if plugin.manifest().capabilities.provides_formatters {
+                    for formatter in plugin.plugin().formatters() {
+                        let key = Self::normalize_plugin_item_name(&formatter.name);
+                        self.formatter_conflicts
+                            .entry(key.clone())
+                            .or_default()
+                            .push(plugin_key.clone());
+                        self.formatter_winners
+                            .entry(key)
+                            .or_insert_with(|| plugin_key.clone());
+                    }
+                }
+            }
+        }
+
+        for (command, providers) in &self.command_conflicts {
+            if providers.len() > 1 {
+                let ignored = providers[1..].join(", ");
+                warn!(
+                    "Plugin command collision: '{}' winner: {} ignored: {}",
+                    command, providers[0], ignored
+                );
+            }
+        }
+
+        for (formatter, providers) in &self.formatter_conflicts {
+            if providers.len() > 1 {
+                let ignored = providers[1..].join(", ");
+                warn!(
+                    "Plugin formatter collision: '{}' winner: {} ignored: {}",
+                    formatter, providers[0], ignored
+                );
+            }
+        }
     }
 
     /// Get the number of loaded plugins
@@ -760,6 +895,10 @@ impl PluginRegistry {
     pub fn unload_all(&mut self) {
         info!("Unloading all plugins");
         self.plugins.clear();
+        self.command_winners.clear();
+        self.formatter_winners.clear();
+        self.command_conflicts.clear();
+        self.formatter_conflicts.clear();
         if let Ok(mut health) = self.health.write() {
             health.clear();
         }
@@ -785,11 +924,12 @@ impl PluginRegistry {
                 if caps.supports_hot_reload {
                     stats.supports_hot_reload += 1;
                 }
+                let plugin_key = Self::plugin_registration_key(&plugin);
                 if let Some(health) = self
                     .health
                     .read()
                     .ok()
-                    .and_then(|health| health.get(plugin.manifest().name.as_str()).cloned())
+                    .and_then(|health| health.get(plugin_key.as_str()).cloned())
                 {
                     stats.plugin_failures += health.total_failures;
                     stats.plugin_timeouts += health.total_timeouts;
@@ -803,6 +943,16 @@ impl PluginRegistry {
 
         stats.total = self.plugins.len();
         stats
+    }
+
+    /// Get all plugin command conflicts, including the winner first.
+    pub fn command_conflicts(&self) -> &HashMap<String, Vec<String>> {
+        &self.command_conflicts
+    }
+
+    /// Get all plugin formatter conflicts, including the winner first.
+    pub fn formatter_conflicts(&self) -> &HashMap<String, Vec<String>> {
+        &self.formatter_conflicts
     }
 
     pub fn all_commands(&self) -> Vec<PluginCommand> {
@@ -835,71 +985,60 @@ impl PluginRegistry {
 
     /// Execute a plugin-provided command, if any plugin declares it.
     pub fn execute_command(&self, command: &str, args: &[String]) -> PluginResult<Option<String>> {
-        let names: Vec<String> = self.plugins.keys().cloned().collect();
-        for name in names {
-            let Some(plugin_arc) = self.plugins.get(&name) else {
-                continue;
-            };
-            {
-                let plugin = plugin_arc.read().map_err(|_| {
-                    PluginError::ExecutionFailed(format!("Failed to acquire plugin lock: {}", name))
-                })?;
-                if !plugin.manifest().capabilities.provides_commands {
-                    continue;
-                }
-                if !plugin
-                    .plugin()
-                    .commands()
-                    .iter()
-                    .any(|cmd| cmd.name == command)
-                {
-                    continue;
-                }
-            }
+        let key = Self::normalize_plugin_item_name(command);
+        let plugin_name = match self.command_winners.get(&key) {
+            Some(name) => name.clone(),
+            None => return Ok(None),
+        };
 
-            let mut health = self.health.write().map_err(|_| {
-                PluginError::ExecutionFailed("Failed to update plugin health".to_string())
-            })?;
-            let result =
-                self.run_command_with_policy(&mut health, &name, plugin_arc, command, args)?;
-            return Ok(Some(result));
-        }
+        let plugin_arc = self
+            .plugins
+            .get(&plugin_name)
+            .ok_or_else(|| {
+                PluginError::ExecutionFailed(format!(
+                    "Plugin '{}' registered as command winner but is missing",
+                    plugin_name
+                ))
+            })?
+            .clone();
 
-        Ok(None)
+        let mut health = self.health.write().map_err(|_| {
+            PluginError::ExecutionFailed("Failed to update plugin health".to_string())
+        })?;
+        let result =
+            self.run_command_with_policy(&mut health, &plugin_name, &plugin_arc, command, args)?;
+        Ok(Some(result))
     }
 
     pub fn format_output(&self, formatter: &str, data: &str) -> PluginResult<Option<String>> {
-        let names: Vec<String> = self.plugins.keys().cloned().collect();
-        for name in names {
-            let Some(plugin_arc) = self.plugins.get(&name) else {
-                continue;
-            };
-            {
-                let plugin = plugin_arc.read().map_err(|_| {
-                    PluginError::ExecutionFailed(format!("Failed to acquire plugin lock: {}", name))
-                })?;
-                if !plugin.manifest().capabilities.provides_formatters {
-                    continue;
-                }
-                if !plugin
-                    .plugin()
-                    .formatters()
-                    .iter()
-                    .any(|fmt| fmt.name == formatter)
-                {
-                    continue;
-                }
-            }
+        let key = Self::normalize_plugin_item_name(formatter);
+        let plugin_name = match self.formatter_winners.get(&key) {
+            Some(name) => name.clone(),
+            None => return Ok(None),
+        };
 
-            let mut health = self.health.write().map_err(|_| {
-                PluginError::ExecutionFailed("Failed to update plugin health".to_string())
-            })?;
-            let result =
-                self.run_formatter_with_policy(&mut health, &name, plugin_arc, formatter, data)?;
-            return Ok(Some(result));
-        }
+        let plugin_arc = self
+            .plugins
+            .get(&plugin_name)
+            .ok_or_else(|| {
+                PluginError::ExecutionFailed(format!(
+                    "Plugin '{}' registered as formatter winner but is missing",
+                    plugin_name
+                ))
+            })?
+            .clone();
 
-        Ok(None)
+        let mut health = self.health.write().map_err(|_| {
+            PluginError::ExecutionFailed("Failed to update plugin health".to_string())
+        })?;
+        let result = self.run_formatter_with_policy(
+            &mut health,
+            &plugin_name,
+            &plugin_arc,
+            formatter,
+            data,
+        )?;
+        Ok(Some(result))
     }
 
     fn run_hook_with_policy(
@@ -1194,6 +1333,7 @@ mod tests {
     use crate::plugin::manifest::{PluginCapabilities, PluginManifest};
     use crate::plugin::InspectorPlugin;
     use std::any::Any;
+    use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
     use std::thread;
 
@@ -1492,6 +1632,249 @@ mod tests {
         let stats = registry.statistics();
         assert_eq!(stats.total, 0);
         assert_eq!(stats.hooks_execution, 0);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    struct NamedCommandPlugin {
+        manifest: PluginManifest,
+        command_name: String,
+        response: String,
+    }
+
+    impl NamedCommandPlugin {
+        fn new(name: &str, command_name: &str, response: &str) -> Self {
+            Self {
+                manifest: PluginManifest {
+                    name: name.to_string(),
+                    version: "1.0.0".to_string(),
+                    description: "test plugin".to_string(),
+                    author: "test".to_string(),
+                    license: Some("MIT".to_string()),
+                    min_debugger_version: Some("0.1.0".to_string()),
+                    capabilities: PluginCapabilities {
+                        hooks_execution: true,
+                        provides_commands: true,
+                        provides_formatters: false,
+                        supports_hot_reload: false,
+                    },
+                    library: "test.so".to_string(),
+                    dependencies: vec![],
+                    signature: None,
+                },
+                command_name: command_name.to_string(),
+                response: response.to_string(),
+            }
+        }
+    }
+
+    impl InspectorPlugin for NamedCommandPlugin {
+        fn metadata(&self) -> PluginManifest {
+            self.manifest.clone()
+        }
+
+        fn on_event(
+            &mut self,
+            _event: &ExecutionEvent,
+            _context: &mut EventContext,
+        ) -> PluginResult<()> {
+            Ok(())
+        }
+
+        fn commands(&self) -> Vec<PluginCommand> {
+            vec![PluginCommand {
+                name: self.command_name.clone(),
+                description: "test".to_string(),
+                arguments: vec![],
+            }]
+        }
+
+        fn execute_command(&mut self, _command: &str, _args: &[String]) -> PluginResult<String> {
+            Ok(self.response.clone())
+        }
+    }
+
+    #[test]
+    fn plugin_command_conflicts_are_detected_and_winner_is_deterministic() {
+        let temp_dir = std::env::temp_dir().join("soroban-debug-test-plugins-conflicts");
+        let mut registry = PluginRegistry::with_plugin_dir(temp_dir.clone()).unwrap();
+
+        let plugin_a = NamedCommandPlugin::new("plugin-a", "foo", "result-a");
+        let loaded_a = LoadedPlugin::from_parts_for_tests(
+            Box::new(plugin_a),
+            PathBuf::from("plugin-a.so"),
+            PluginManifest {
+                name: "plugin-a".to_string(),
+                version: "1.0.0".to_string(),
+                description: "test plugin".to_string(),
+                author: "test".to_string(),
+                license: Some("MIT".to_string()),
+                min_debugger_version: Some("0.1.0".to_string()),
+                capabilities: PluginCapabilities {
+                    hooks_execution: true,
+                    provides_commands: true,
+                    provides_formatters: false,
+                    supports_hot_reload: false,
+                },
+                library: "plugin-a.so".to_string(),
+                dependencies: vec![],
+                signature: None,
+            },
+            PluginTrustAssessment {
+                trusted: true,
+                warnings: Vec::new(),
+                signer: None,
+            },
+        );
+
+        let plugin_b = NamedCommandPlugin::new("plugin-b", " Foo ", "result-b");
+        let loaded_b = LoadedPlugin::from_parts_for_tests(
+            Box::new(plugin_b),
+            PathBuf::from("plugin-b.so"),
+            PluginManifest {
+                name: "plugin-b".to_string(),
+                version: "1.0.0".to_string(),
+                description: "test plugin".to_string(),
+                author: "test".to_string(),
+                license: Some("MIT".to_string()),
+                min_debugger_version: Some("0.1.0".to_string()),
+                capabilities: PluginCapabilities {
+                    hooks_execution: true,
+                    provides_commands: true,
+                    provides_formatters: false,
+                    supports_hot_reload: false,
+                },
+                library: "plugin-b.so".to_string(),
+                dependencies: vec![],
+                signature: None,
+            },
+            PluginTrustAssessment {
+                trusted: true,
+                warnings: Vec::new(),
+                signer: None,
+            },
+        );
+
+        registry.register_plugin(loaded_a).unwrap();
+        registry.register_plugin(loaded_b).unwrap();
+
+        let conflicts = registry.command_conflicts();
+        assert_eq!(
+            conflicts.get("foo").unwrap(),
+            &vec!["plugin-a".to_string(), "plugin-b".to_string()]
+        );
+
+        let result = registry.execute_command("FOO", &[]).unwrap().unwrap();
+        assert_eq!(result, "result-a");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn plugin_formatter_conflicts_are_detected_and_winner_is_deterministic() {
+        struct NamedFormatterPlugin {
+            manifest: PluginManifest,
+            formatter_name: String,
+            response: String,
+        }
+
+        impl InspectorPlugin for NamedFormatterPlugin {
+            fn metadata(&self) -> PluginManifest {
+                self.manifest.clone()
+            }
+
+            fn formatters(&self) -> Vec<OutputFormatter> {
+                vec![OutputFormatter {
+                    name: self.formatter_name.clone(),
+                    supported_types: vec!["text".to_string()],
+                }]
+            }
+
+            fn format_output(&self, _formatter: &str, _data: &str) -> PluginResult<String> {
+                Ok(self.response.clone())
+            }
+        }
+
+        let temp_dir = std::env::temp_dir().join("soroban-debug-test-formatter-conflicts");
+        let mut registry = PluginRegistry::with_plugin_dir(temp_dir.clone()).unwrap();
+
+        let manifest_a = PluginManifest {
+            name: "plugin-a".to_string(),
+            version: "1.0.0".to_string(),
+            description: "test plugin".to_string(),
+            author: "test".to_string(),
+            license: Some("MIT".to_string()),
+            min_debugger_version: Some("0.1.0".to_string()),
+            capabilities: PluginCapabilities {
+                hooks_execution: true,
+                provides_commands: false,
+                provides_formatters: true,
+                supports_hot_reload: false,
+            },
+            library: "plugin-a.so".to_string(),
+            dependencies: vec![],
+            signature: None,
+        };
+        let plugin_a = NamedFormatterPlugin {
+            manifest: manifest_a.clone(),
+            formatter_name: "jsonx".to_string(),
+            response: "formatted-a".to_string(),
+        };
+        let loaded_a = LoadedPlugin::from_parts_for_tests(
+            Box::new(plugin_a),
+            PathBuf::from("plugin-a.so"),
+            manifest_a,
+            PluginTrustAssessment {
+                trusted: true,
+                warnings: Vec::new(),
+                signer: None,
+            },
+        );
+
+        let manifest_b = PluginManifest {
+            name: "plugin-b".to_string(),
+            version: "1.0.0".to_string(),
+            description: "test plugin".to_string(),
+            author: "test".to_string(),
+            license: Some("MIT".to_string()),
+            min_debugger_version: Some("0.1.0".to_string()),
+            capabilities: PluginCapabilities {
+                hooks_execution: true,
+                provides_commands: false,
+                provides_formatters: true,
+                supports_hot_reload: false,
+            },
+            library: "plugin-b.so".to_string(),
+            dependencies: vec![],
+            signature: None,
+        };
+        let plugin_b = NamedFormatterPlugin {
+            manifest: manifest_b.clone(),
+            formatter_name: " jsonx ".to_string(),
+            response: "formatted-b".to_string(),
+        };
+        let loaded_b = LoadedPlugin::from_parts_for_tests(
+            Box::new(plugin_b),
+            PathBuf::from("plugin-b.so"),
+            manifest_b,
+            PluginTrustAssessment {
+                trusted: true,
+                warnings: Vec::new(),
+                signer: None,
+            },
+        );
+
+        registry.register_plugin(loaded_a).unwrap();
+        registry.register_plugin(loaded_b).unwrap();
+
+        let conflicts = registry.formatter_conflicts();
+        assert_eq!(
+            conflicts.get("jsonx").unwrap(),
+            &vec!["plugin-a".to_string(), "plugin-b".to_string()]
+        );
+
+        let result = registry.format_output("JSONX", "data").unwrap().unwrap();
+        assert_eq!(result, "formatted-a");
+
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 

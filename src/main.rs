@@ -243,6 +243,42 @@ fn main() -> miette::Result<()> {
                             message.push_str(&format!("  - {}\n", fmt.name));
                         }
                     }
+
+                    let command_conflicts =
+                        soroban_debugger::plugin::registry::global_command_conflicts();
+                    if !command_conflicts.is_empty() {
+                        let mut conflict_entries: Vec<_> = command_conflicts.iter().collect();
+                        conflict_entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+                        message.push_str("\nPlugin command collisions detected:\n");
+                        for (cmd, providers) in conflict_entries {
+                            if providers.len() > 1 {
+                                message.push_str(&format!(
+                                    "  - {}: winner {} ignored {}\n",
+                                    cmd,
+                                    providers[0],
+                                    providers[1..].join(", ")
+                                ));
+                            }
+                        }
+                    }
+
+                    let formatter_conflicts =
+                        soroban_debugger::plugin::registry::global_formatter_conflicts();
+                    if !formatter_conflicts.is_empty() {
+                        let mut conflict_entries: Vec<_> = formatter_conflicts.iter().collect();
+                        conflict_entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+                        message.push_str("\nPlugin formatter collisions detected:\n");
+                        for (formatter, providers) in conflict_entries {
+                            if providers.len() > 1 {
+                                message.push_str(&format!(
+                                    "  - {}: winner {} ignored {}\n",
+                                    formatter,
+                                    providers[0],
+                                    providers[1..].join(", ")
+                                ));
+                            }
+                        }
+                    }
                     Err(soroban_debugger::DebuggerError::ExecutionError(message).into())
                 }
                 Err(e) => {

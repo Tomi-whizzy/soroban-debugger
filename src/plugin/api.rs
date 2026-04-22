@@ -44,7 +44,12 @@ pub enum PluginError {
     CircuitOpen(String),
 }
 
-/// Custom CLI command that a plugin can provide
+/// Custom CLI command that a plugin can provide.
+///
+/// Plugin command names are matched case-insensitively and normalized by
+/// trimming whitespace. Conflicts between plugins are resolved deterministically
+/// by plugin name precedence, and collisions are exposed through the plugin
+/// registry.
 #[derive(Debug, Clone)]
 pub struct PluginCommand {
     /// Command name
@@ -57,7 +62,11 @@ pub struct PluginCommand {
     pub arguments: Vec<(String, String, bool)>,
 }
 
-/// Custom output formatter that a plugin can provide
+/// Custom output formatter that a plugin can provide.
+///
+/// Formatter names are matched case-insensitively and normalized by trimming
+/// whitespace. If multiple plugins provide the same formatter, a deterministic
+/// winner is chosen and the conflict is recorded.
 #[derive(Debug, Clone)]
 pub struct OutputFormatter {
     /// Formatter name
