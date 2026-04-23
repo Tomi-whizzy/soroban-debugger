@@ -2945,4 +2945,13 @@ mod tests {
         assert!(json.get("protocol").is_some());
         assert!(json.get("vscode_extension").is_some());
     }
-}
+        let json = serde_json::to_value(&report).unwrap();
+        assert!(json.get("binary").is_some());
+        assert!(json.get("config").is_some());
+        assert!(json.get("history").is_some());
+        assert!(json.get("plugins").is_some());
+        assert!(json.get("protocol").is_some());
+        assert!(json.get("vscode_extension").is_some());
+    }
+
+
