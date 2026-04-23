@@ -250,6 +250,9 @@ pub enum DebugRequest {
     /// Disconnect
     Disconnect,
 
+    /// Get diagnostic and contract events
+    GetEvents,
+
     /// Cancel a running execution
     Cancel,
 

@@ -18,19 +18,25 @@ use soroban_sdk::{Address, Env, InvokeError, Symbol, Val, Vec as SorobanVec};
 use std::collections::HashMap;
 use tracing::info;
 
+/// Arguments for contract function invocation.
+pub struct InvokeArgs<'a> {
+    pub function: &'a str,
+    pub args: Vec<Val>,
+    pub reason: InvocationReason,
+}
+
 /// Invoke `function` on the already-registered contract at `contract_address`.
+#[allow(clippy::too_many_arguments)]
 #[tracing::instrument(skip_all, fields(function = function))]
 pub fn invoke_function(
     env: &Env,
     contract_address: &Address,
     error_db: &ErrorDatabase,
-    function: &str,
-    invocation_reason: InvocationReason,
-    parsed_args: Vec<Val>,
+    args: InvokeArgs,
     _timeout_secs: u64,
     storage_fn: impl Fn() -> Result<HashMap<String, String>>,
 ) -> Result<(String, ExecutionRecord)> {
-    info!("Executing function: {}", function);
+    info!("Executing function: {}", args.function);
 
     let mut memory_tracker = MemoryTracker::new(
         env.host()
@@ -47,15 +53,15 @@ pub fn invoke_function(
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
     );
-    spinner.set_message(format!("Executing function: {}...", function));
+    spinner.set_message(format!("Executing function: {}...", args.function));
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let func_symbol = Symbol::new(env, function);
+    let func_symbol = Symbol::new(env, args.function);
 
-    let args_vec = if parsed_args.is_empty() {
+    let args_vec = if args.args.is_empty() {
         SorobanVec::<Val>::new(env)
     } else {
-        SorobanVec::from_slice(env, &parsed_args)
+        SorobanVec::from_slice(env, &args.args)
     };
     memory_tracker.record_snapshot(env.host(), "invoke:build_args_vec");
 
@@ -65,7 +71,8 @@ pub fn invoke_function(
 
     // Convert Val → ScVal for the execution record.
     // TryFromVal is used here via ScVal::try_from_val.
-    let sc_args: Vec<ScVal> = parsed_args
+    let sc_args: Vec<ScVal> = args
+        .args
         .iter()
         .map(|v| ScVal::try_from_val(env.host(), v))
         .collect::<std::result::Result<Vec<_>, _>>()
@@ -100,8 +107,8 @@ pub fn invoke_function(
     memory_summary.display();
 
     let record = ExecutionRecord {
-        function: function.to_string(),
-        invocation_reason,
+        function: args.function.to_string(),
+        invocation_reason: args.reason,
         args: sc_args,
         result: record_result,
         budget: execution_budget,

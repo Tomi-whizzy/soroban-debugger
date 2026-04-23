@@ -433,6 +433,11 @@ client.transfer(&from, &to, &amount);
 - Function not marked with `#[contractimpl]`
 - Wrong contract address
 
+**How to fix:**
+- Use `soroban-debug inspect --contract <WASM>` to list all exported functions and verify the name.
+- Ensure the function is marked with `#[contractimpl]` and is public.
+- Double-check the contract address if you are using multiple contracts in your environment.
+
 ## Testing Authorization
 
 ### Unit Test Template

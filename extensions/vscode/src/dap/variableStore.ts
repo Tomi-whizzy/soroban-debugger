@@ -153,6 +153,12 @@ export class VariableStore {
       .map(([name, value]) => this.toVariable(name, value));
   }
 
+  variablesFromLocals(locals: Record<string, unknown>): Variable[] {
+    return Object.entries(locals)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, value]) => this.toVariable(name, value));
+  }
+
   /**
    * Search/filter storage entries by key or value substring.
    * Supports large snapshots by returning only matching entries.

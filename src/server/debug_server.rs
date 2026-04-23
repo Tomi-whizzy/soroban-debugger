@@ -1212,6 +1212,17 @@ impl DebugServer {
                         log_points: true,
                     },
                 },
+                DebugRequest::GetEvents => match self.engine.as_ref() {
+                    Some(engine) => match engine.executor().get_dynamic_trace() {
+                        Ok(events) => DebugResponse::EventsList { events },
+                        Err(e) => DebugResponse::Error {
+                            message: e.to_string(),
+                        },
+                    },
+                    None => DebugResponse::Error {
+                        message: "No contract loaded".to_string(),
+                    },
+                },
                 DebugRequest::SetStorage { storage_json } => match self.engine.as_mut() {
                     Some(engine) => match engine.executor_mut().set_initial_storage(storage_json) {
                         Ok(_) => match engine.executor().get_storage_snapshot() {

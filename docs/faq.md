@@ -57,17 +57,23 @@ soroban-debug inspect --contract my_contract.wasm
 ```
 
 ### 6. Contract panics with "Host error: Unknown error"
+**Cause:** This occurs when a contract triggers a host panic that isn't mapped to a specific error code, or when a Rust `panic!` occurs without a descriptive message.
+**Fix:**
+- Use the `logs` command in `interactive` mode to see the host-level diagnostic events leading up to the panic.
+- Check for common Rust panics: `unwrap()` on `None`, out-of-bounds array access, or integer overflow.
+- Ensure all contract dependencies are compatible with the current Soroban host version.
+
 ---
 
 ## Breakpoints
 
 ### 7. Breakpoints are not triggering
-**Cause:** You might be setting a breakpoint on a function that is never called, or the function name is slightly different (e.g., due to name mangling, though Soroban usually keeps them clean).
+**Cause:** You might be setting a breakpoint on a function that is never called, or the function name is slightly different (e.g., due to name mangling).
 **Fix:** Verify the function name using `soroban-debug inspect`. In `interactive` mode, use `list-breaks` to ensure your breakpoints are registered.
 
 ### 8. Can I set a breakpoint on a specific line number?
 **Answer:** Currently, the debugger supports setting breakpoints only at **function boundaries**.
-**Workaround:** Set a breakpoint at the function containing the line, then use `s` (step) or `n` (next) to reach the specific line you're interested in.
+**Workaround:** Set a breakpoint at the function containing the line, then use `s` (step) or `n` (next) to reach the specific line.
 
 ### 9. Why does VS Code show `verified=false` but the breakpoint still hits?
 **Cause:** Source verification and runtime binding are different decisions in the adapter.
@@ -90,7 +96,7 @@ soroban-debug inspect --contract my_contract.wasm
 **Cause:** The execution hit the maximum allowed Soroban resource limits.
 **Fix:** Check for infinite loops or extremely inefficient algorithms. You can also try to provide a larger initial budget if your local environment allows (though on-chain limits will still apply).
 
-### 13. Debugger budget numbers don't match exactly with on-chain execution
+### 12. Debugger budget numbers don't match exactly with on-chain execution
 **Cause:** The debugger environment might have slight overhead or use a different version of the Soroban host than the network you are targeting.
 **Fix:** Use budget numbers as a relative guide for optimization rather than an absolute guarantee for on-chain costs.
 

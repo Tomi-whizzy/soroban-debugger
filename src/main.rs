@@ -248,7 +248,7 @@ fn main() -> miette::Result<()> {
                         soroban_debugger::plugin::registry::global_command_conflicts();
                     if !command_conflicts.is_empty() {
                         let mut conflict_entries: Vec<_> = command_conflicts.iter().collect();
-                        conflict_entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+                        conflict_entries.sort_by_key(|(a, _)| *a);
                         message.push_str("\nPlugin command collisions detected:\n");
                         for (cmd, providers) in conflict_entries {
                             if providers.len() > 1 {
@@ -266,7 +266,7 @@ fn main() -> miette::Result<()> {
                         soroban_debugger::plugin::registry::global_formatter_conflicts();
                     if !formatter_conflicts.is_empty() {
                         let mut conflict_entries: Vec<_> = formatter_conflicts.iter().collect();
-                        conflict_entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+                        conflict_entries.sort_by_key(|(a, _)| *a);
                         message.push_str("\nPlugin formatter collisions detected:\n");
                         for (formatter, providers) in conflict_entries {
                             if providers.len() > 1 {

@@ -76,7 +76,9 @@ Benchmarks must not regress beyond the configured thresholds:
   - `Cargo.toml` version equals `X.Y.Z`
   - `extensions/vscode/package.json` version equals `X.Y.Z` (if publishing the extension as part of the release)
 - Changelog:
-  - `CHANGELOG.md` updated for `X.Y.Z`
+  - `CHANGELOG.md` updated for `X.Y.Z` using the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+  - (Optional) Use `git-cliff` to generate the log:  
+    `git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md`
 
 ## Waiver process (when absolutely necessary)
 

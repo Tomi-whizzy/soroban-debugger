@@ -1362,7 +1362,7 @@ impl PluginRegistry {
             library_path: Some(meta.descriptor.library_path.display().to_string()),
             invocation_kind: format!("{:?}", meta.kind).to_lowercase(),
             incident,
-            action_taken: "disabled plugin for the current session".to_string(),
+            action_taken: "disabled for this session".to_string(),
             core_debugger_status: "core debugger remains available; only the plugin was isolated"
                 .to_string(),
             message,

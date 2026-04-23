@@ -72,6 +72,7 @@ export interface DebuggerState {
   callStack?: StackFrame[];
   storage?: Record<string, unknown>;
   args?: string;
+  locals?: Record<string, unknown>;
 }
 
 export interface BreakpointCapabilities {

@@ -140,9 +140,11 @@ impl ContractExecutor {
             &self.env,
             &self.contract_address,
             &self.error_db,
-            function,
-            InvocationReason::Entrypoint,
-            parsed_args,
+            crate::runtime::invoker::InvokeArgs {
+                function,
+                args: parsed_args,
+                reason: InvocationReason::Entrypoint,
+            },
             self.timeout_secs,
             storage_fn,
         )?;

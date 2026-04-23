@@ -14,6 +14,8 @@ import {
 } from './preflightCommand'
 import { diagnoseBreakpoints } from './dap/sourceBreakpoints'
 import { SorobanLaunchProgressReporter } from './launchProgress'
+import { EventsTreeDataProvider } from './eventsTree'
+import { openDocsCommand, OPEN_DOCS_COMMAND } from './openDocsCommand'
 
 type SorobanLaunchConfig = vscode.DebugConfiguration & DebuggerProcessConfig
 const RUN_LAUNCH_PREFLIGHT_COMMAND = 'soroban-debugger.runLaunchPreflight'
@@ -42,6 +44,10 @@ class SorobanDebugConfigurationProvider
       config.requestTimeoutMs ?? settings.get<number>('requestTimeoutMs')
     config.connectTimeoutMs =
       config.connectTimeoutMs ?? settings.get<number>('connectTimeoutMs')
+    config.contractPath =
+      config.contractPath ?? settings.get<string>('defaultContractPath')
+    config.snapshotPath =
+      config.snapshotPath ?? settings.get<string>('defaultSnapshotPath')
 
     const preflight = await validateLaunchConfig(config)
     if (preflight.ok) {
@@ -66,10 +72,12 @@ let launchProgressReporter: SorobanLaunchProgressReporter | undefined
 export function activate(context: vscode.ExtensionContext): void {
   logManager = new LogManager(context)
   launchProgressReporter = new SorobanLaunchProgressReporter()
+  const eventsTreeDataProvider = new EventsTreeDataProvider()
   const factory = new SorobanDebugAdapterDescriptorFactory(
     context,
     logManager,
-    launchProgressReporter
+    launchProgressReporter,
+    eventsTreeDataProvider
   )
   const configurationProvider = new SorobanDebugConfigurationProvider()
 
@@ -79,12 +87,19 @@ export function activate(context: vscode.ExtensionContext): void {
       'soroban',
       configurationProvider
     ),
+    vscode.window.registerTreeDataProvider(
+      'soroban-debugger.eventsView',
+      eventsTreeDataProvider
+    ),
     vscode.commands.registerCommand(
       RUN_LAUNCH_PREFLIGHT_COMMAND,
       runStandaloneLaunchPreflight
     ),
     vscode.commands.registerCommand(DIAGNOSE_SOURCE_MAP_COMMAND, async () => {
       await runDiagnoseSourceMapCommand()
+    }),
+    vscode.commands.registerCommand(OPEN_DOCS_COMMAND, async () => {
+      await openDocsCommand(context)
     }),
     factory,
     launchProgressReporter

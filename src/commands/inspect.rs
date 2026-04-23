@@ -64,6 +64,9 @@ struct FunctionListing {
 struct SourceMapReport {
     mappings_count: usize,
     diagnostics: Vec<crate::debugger::source_map::SourceMapDiagnostic>,
+    units_processed: usize,
+    units_with_line_program: usize,
+    coverage_ratio: f64,
 }
 
 #[derive(Serialize)]
@@ -207,6 +210,13 @@ fn print_json_report(path: &Path, wasm_bytes: &[u8]) -> Result<()> {
         source_map: SourceMapReport {
             mappings_count: source_map.len(),
             diagnostics: source_map.diagnostics.clone(),
+            units_processed: source_map.units_processed,
+            units_with_line_program: source_map.units_with_line_program,
+            coverage_ratio: if source_map.units_processed > 0 {
+                source_map.units_with_line_program as f64 / source_map.units_processed as f64
+            } else {
+                0.0
+            },
         },
     };
 
@@ -414,6 +424,32 @@ fn print_report(path: &Path, wasm_bytes: &[u8]) -> Result<()> {
             "  Mapped Executable Lines : {}",
             source_map.len().to_string().bright_white()
         ));
+        log_both(&format!(
+            "  DWARF Units Processed   : {}",
+            source_map.units_processed.to_string().bright_white()
+        ));
+        log_both(&format!(
+            "  Units with Mappings     : {}",
+            source_map.units_with_line_program.to_string().bright_white()
+        ));
+
+        let coverage = if source_map.units_processed > 0 {
+            (source_map.units_with_line_program as f64 / source_map.units_processed as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        let coverage_str = format!("{:.1}%", coverage);
+        let styled_coverage = if coverage >= 90.0 {
+            coverage_str.green().bold()
+        } else if coverage >= 50.0 {
+            coverage_str.yellow()
+        } else {
+            coverage_str.red().bold()
+        };
+
+        log_both(&format!("  Mapping Coverage        : {}", styled_coverage));
+
         if !source_map.diagnostics.is_empty() {
             log_both("");
             log_both(&format!(
