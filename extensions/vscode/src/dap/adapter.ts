@@ -2,7 +2,8 @@ import {
   DebugSession,
   InitializedEvent,
   StoppedEvent,
-  ExitedEvent
+  ExitedEvent,
+  OutputEvent
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import * as fs from 'fs';
@@ -109,6 +110,8 @@ export class SorobanDebugSession extends DebugSession {
   private refreshGeneration = 0;
   private launchLifecycleReporter?: (event: LaunchLifecycleEvent) => void;
   private batchArgsPath?: string;
+  private showEvents = false;
+  private eventFilterPatterns: string[] = [];
 
   constructor(
     logManagerOrLinesStartAt1?: LogManager | boolean,
@@ -170,6 +173,9 @@ export class SorobanDebugSession extends DebugSession {
         connectTimeoutMs: args.connectTimeoutMs,
         storageFilter: args.storageFilter,
         repeat: args.repeat,
+        showEvents: args.showEvents,
+        eventFilter: args.eventFilter,
+        mock: args.mock,
         tlsCert: args.tlsCert,
         tlsKey: args.tlsKey,
         batchArgs: args.batchArgs
@@ -177,6 +183,10 @@ export class SorobanDebugSession extends DebugSession {
 
       await this.debuggerProcess.start();
       this.batchArgsPath = args.batchArgs;
+      this.showEvents = Boolean(args.showEvents);
+      this.eventFilterPatterns = Array.isArray(args.eventFilter)
+        ? args.eventFilter.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+        : [];
       this.state.isRunning = true;
       this.state.isPaused = false;
       this.hasExecuted = false;
@@ -223,6 +233,10 @@ export class SorobanDebugSession extends DebugSession {
       this.debuggerProcess = new DebuggerProcess(attachConfig, this.logManager, this.launchLifecycleReporter);
 
       await this.debuggerProcess.start();
+      this.showEvents = Boolean(args.showEvents);
+      this.eventFilterPatterns = Array.isArray(args.eventFilter)
+        ? args.eventFilter.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+        : [];
       this.state.isRunning = true;
       this.state.isPaused = false;
       this.hasExecuted = false;
@@ -630,7 +644,8 @@ export class SorobanDebugSession extends DebugSession {
       if (result.paused) {
         await this.refreshState();
         this.state.isPaused = true;
-        this.sendEvent(new StoppedEvent('breakpoint', this.threadId));
+        const stopReason = this.mapPauseReason(result.pauseReason) ?? 'breakpoint';
+        this.sendEvent(new StoppedEvent(stopReason, this.threadId));
         return;
       }
 
@@ -734,6 +749,10 @@ export class SorobanDebugSession extends DebugSession {
 
       reader.on('line', (line: string) => {
         this.logManager?.log(ManagerLogLevel.Debug, LogPhase.Backend, line);
+        if (this.showEvents && this.matchesEventOutputFilter(line)) {
+          this.sendEvent(new OutputEvent(`[event] ${line}\n`, 'stdout'));
+          return;
+        }
         this.sendEvent(new LogOutputEvent(line + '\n', LogLevel.Log));
       });
       this.outputReaders.push(reader);
@@ -773,7 +792,8 @@ export class SorobanDebugSession extends DebugSession {
 
     if (result.paused) {
       this.state.isPaused = true;
-      this.sendEvent(new StoppedEvent(reason, this.threadId));
+      const stopReason = this.mapPauseReason(result.pauseReason) ?? reason;
+      this.sendEvent(new StoppedEvent(stopReason, this.threadId));
       return;
     }
 
@@ -863,7 +883,8 @@ export class SorobanDebugSession extends DebugSession {
       if (result.paused) {
         await this.refreshState();
         this.state.isPaused = true;
-        this.sendEvent(new StoppedEvent('step', this.threadId));
+        const stopReason = this.mapPauseReason(result.pause_reason) ?? 'step';
+        this.sendEvent(new StoppedEvent(stopReason, this.threadId));
         return;
       }
 
@@ -968,6 +989,31 @@ export class SorobanDebugSession extends DebugSession {
     process.stderr.write(`BREAKPOINT_SYNC_TEST ${JSON.stringify(record)}\n`);
   }
 
+  private matchesEventOutputFilter(line: string): boolean {
+    if (this.eventFilterPatterns.length === 0) {
+      return true;
+    }
+
+    const lowered = line.toLowerCase();
+    return this.eventFilterPatterns.some((pattern) => {
+      const trimmed = pattern.trim();
+      if (trimmed.length === 0) {
+        return false;
+      }
+
+      if (trimmed.startsWith('re:')) {
+        const expr = trimmed.slice(3);
+        try {
+          return new RegExp(expr, 'i').test(line);
+        } catch {
+          return false;
+        }
+      }
+
+      return lowered.includes(trimmed.toLowerCase());
+    });
+  }
+
   private async refreshState(): Promise<void> {
     if (!this.debuggerProcess) {
       return;
@@ -1028,6 +1074,23 @@ export class SorobanDebugSession extends DebugSession {
     });
     this.state.args = inspection.args;
     this.state.storage = storage;
+  }
+
+  private mapPauseReason(reason?: string): 'breakpoint' | 'step' | 'pause' | 'exception' | undefined {
+    switch (reason) {
+      case 'breakpoint':
+        return 'breakpoint';
+      case 'step_boundary':
+        return 'step';
+      case 'user_interrupt':
+        return 'pause';
+      case 'panic':
+        return 'exception';
+      case 'end_of_execution':
+        return 'pause';
+      default:
+        return undefined;
+    }
   }
 
   public async stop(): Promise<void> {

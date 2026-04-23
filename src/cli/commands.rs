@@ -536,6 +536,9 @@ pub fn run(args: RunArgs, verbosity: Verbosity) -> Result<()> {
             tls_key: args.tls_key,
             repeat: args.repeat,
             storage_filter: args.storage_filter,
+            show_events: args.show_events,
+            event_filter: args.event_filter,
+            mock: args.mock,
         });
     }
 
@@ -550,6 +553,7 @@ pub fn run(args: RunArgs, verbosity: Verbosity) -> Result<()> {
                 tls_cert: args.tls_cert.clone(),
                 tls_key: args.tls_key.clone(),
                 tls_ca: None,
+                session_label: None,
                 args: args.args.clone(),
                 connect_timeout_ms: 10000,
                 timeout_ms: 30000,
@@ -1924,6 +1928,9 @@ pub fn server(args: ServerArgs) -> Result<()> {
         args.tls_key.as_deref(),
         args.repeat,
         args.storage_filter,
+        args.show_events,
+        args.event_filter,
+        args.mock,
     )?;
 
     tokio::runtime::Runtime::new()
@@ -1955,6 +1962,7 @@ pub fn remote(args: RemoteArgs, _verbosity: Verbosity) -> Result<()> {
         tls_cert: args.tls_cert.clone(),
         tls_key: args.tls_key.clone(),
         tls_ca: args.tls_ca.clone(),
+        session_label: args.session_label.clone(),
         ..Default::default()
     };
 
@@ -1972,6 +1980,15 @@ pub fn remote(args: RemoteArgs, _verbosity: Verbosity) -> Result<()> {
             }
         })?;
 
+    if let Some(info) = client.session_info() {
+        print_info(format!(
+            "Remote session: {} (created {}, label={})",
+            info.session_id,
+            info.created_at,
+            info.label.as_deref().unwrap_or("<none>")
+        ));
+    }
+
     if let Some(contract) = &args.contract {
         print_info(format!("Loading contract: {:?}", contract));
         let size = client.load_contract(&contract.to_string_lossy())?;
@@ -1981,10 +1998,13 @@ pub fn remote(args: RemoteArgs, _verbosity: Verbosity) -> Result<()> {
     if let Some(action) = &args.action {
         return match action {
             RemoteAction::Inspect => {
-                let (function, step_count, paused, call_stack) = client.inspect()?;
+                let (function, step_count, paused, call_stack, pause_reason) = client.inspect()?;
                 println!("Function: {}", function.as_deref().unwrap_or("<none>"));
                 println!("Step count: {}", step_count);
                 println!("Paused: {}", paused);
+                if let Some(reason) = pause_reason {
+                    println!("Pause reason: {}", reason);
+                }
                 if !call_stack.is_empty() {
                     println!("Call stack:");
                     for frame in &call_stack {

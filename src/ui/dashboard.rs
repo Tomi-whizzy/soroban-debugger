@@ -744,6 +744,12 @@ fn render_execution(f: &mut Frame, app: &mut DashboardApp, area: Rect) {
 
     // Show paused file/line if available
     if paused {
+        if let Some(reason) = app.engine.pause_reason_label() {
+            lines.push(Line::from(vec![
+                Span::styled("Pause reason: ", Style::default().fg(COLOR_TEXT_DIM)),
+                Span::styled(reason, Style::default().fg(COLOR_YELLOW)),
+            ]));
+        }
         if let Some(loc) = app.engine.current_source_location() {
             let file = loc.file.display();
             let line = loc.line;

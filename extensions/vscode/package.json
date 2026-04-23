@@ -144,6 +144,27 @@
               "batchArgs": {
                 "type": "string",
                 "description": "Path to a JSON file containing an array of argument sets for batch execution. Each entry is executed as a separate run with its own args."
+              },
+              "showEvents": {
+                "type": "boolean",
+                "description": "Stream contract events to the debug console output channel during execution.",
+                "default": false
+              },
+              "eventFilter": {
+                "type": "array",
+                "description": "Optional event filter patterns. Use plain substring patterns or regex patterns with the prefix 're:'.",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "mock": {
+                "type": "array",
+                "description": "Mock cross-contract return specs in the format CONTRACT_ID.function=return_value.",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
               }
             }
           },
@@ -228,6 +249,27 @@
                 "description": "Repeat execution N times and show throughput/latency stats.",
                 "minimum": 1,
                 "default": 1
+              },
+              "showEvents": {
+                "type": "boolean",
+                "description": "Stream contract events to the debug console output channel during execution.",
+                "default": false
+              },
+              "eventFilter": {
+                "type": "array",
+                "description": "Optional event filter patterns. Use plain substring patterns or regex patterns with the prefix 're:'.",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "mock": {
+                "type": "array",
+                "description": "Mock cross-contract return specs in the format CONTRACT_ID.function=return_value.",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
               }
             }
           }
@@ -242,6 +284,9 @@
             "entrypoint": "main",
             "args": [],
             "trace": false,
+            "showEvents": false,
+            "eventFilter": [],
+            "mock": [],
             "binaryPath": "${workspaceFolder}/target/debug/soroban-debug"
           }
         ],
@@ -258,6 +303,9 @@
               "entrypoint": "main",
               "args": [],
               "trace": false,
+              "showEvents": false,
+              "eventFilter": [],
+              "mock": [],
               "binaryPath": "${workspaceFolder}/target/debug/soroban-debug"
             }
           },

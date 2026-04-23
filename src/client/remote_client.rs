@@ -58,6 +58,7 @@ pub struct RemoteClientConfig {
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
     pub tls_ca: Option<PathBuf>,
+    pub session_label: Option<String>,
 }
 
 impl Default for RemoteClientConfig {
@@ -71,6 +72,7 @@ impl Default for RemoteClientConfig {
             tls_cert: None,
             tls_key: None,
             tls_ca: None,
+            session_label: None,
         }
     }
 }
@@ -99,6 +101,7 @@ pub struct RemoteClient {
     message_id: u64,
     authenticated: bool,
     config: RemoteClientConfig,
+    session_info: Option<crate::server::protocol::RemoteSessionInfo>,
 }
 
 #[derive(Debug)]
@@ -169,6 +172,7 @@ impl RemoteClient {
             message_id: 0,
             authenticated: token.is_none(),
             config,
+            session_info: None,
         };
 
         client.handshake("rust-remote-client", env!("CARGO_PKG_VERSION"))?;
@@ -340,12 +344,28 @@ impl RemoteClient {
             protocol_max: PROTOCOL_MAX_VERSION,
             heartbeat_interval_ms: self.config.heartbeat_interval_ms,
             idle_timeout_ms: self.config.idle_timeout_ms,
+            session_label: self.config.session_label.clone(),
         })?;
 
         match response {
             DebugResponse::HandshakeAck {
-                selected_version, ..
-            } => Ok(selected_version),
+                selected_version,
+                session_id,
+                session_created_at,
+                session_label,
+                ..
+            } => {
+                self.session_info = Some(crate::server::protocol::RemoteSessionInfo {
+                    session_id: session_id.clone(),
+                    created_at: session_created_at.clone(),
+                    label: session_label.clone(),
+                });
+                info!(
+                    "Connected to remote session {} (created {}, label={:?})",
+                    session_id, session_created_at, session_label
+                );
+                Ok(selected_version)
+            }
             DebugResponse::IncompatibleProtocol { message, .. } => {
                 Err(DebuggerError::ExecutionError(format!(
                     "Incompatible debugger protocol: {}",
@@ -359,6 +379,10 @@ impl RemoteClient {
                     .into(),
             ),
         }
+    }
+
+    pub fn session_info(&self) -> Option<&crate::server::protocol::RemoteSessionInfo> {
+        self.session_info.as_ref()
     }
 
     /// Authenticate with the server
@@ -443,6 +467,7 @@ impl RemoteClient {
                 paused,
                 current_function,
                 step_count,
+                pause_reason: _,
                 ..
             } => Ok((paused, current_function, step_count)),
             DebugResponse::Error { message } => Err(DebuggerError::ExecutionError(message).into()),
@@ -461,6 +486,7 @@ impl RemoteClient {
                 paused,
                 current_function,
                 step_count,
+                pause_reason: _,
                 ..
             } => Ok((paused, current_function, step_count)),
             DebugResponse::Error { message } => Err(DebuggerError::ExecutionError(message).into()),
@@ -479,6 +505,7 @@ impl RemoteClient {
                 paused,
                 current_function,
                 step_count,
+                pause_reason: _,
                 ..
             } => Ok((paused, current_function, step_count)),
             DebugResponse::Error { message } => Err(DebuggerError::ExecutionError(message).into()),
@@ -502,7 +529,7 @@ impl RemoteClient {
     }
 
     /// Inspect current state
-    pub fn inspect(&mut self) -> Result<(Option<String>, u64, bool, Vec<String>)> {
+    pub fn inspect(&mut self) -> Result<(Option<String>, u64, bool, Vec<String>, Option<String>)> {
         let response =
             self.send_request_with_retry(DebugRequest::Inspect, RequestClass::Inspect, true)?;
 
@@ -512,8 +539,9 @@ impl RemoteClient {
                 step_count,
                 paused,
                 call_stack,
+                pause_reason,
                 ..
-            } => Ok((function, step_count, paused, call_stack)),
+            } => Ok((function, step_count, paused, call_stack, pause_reason)),
             DebugResponse::Error { message } => Err(DebuggerError::ExecutionError(message).into()),
             _ => Err(
                 DebuggerError::ExecutionError("Unexpected response to Inspect".to_string()).into(),
@@ -756,6 +784,7 @@ impl RemoteClient {
             protocol_max: 1,
             heartbeat_interval_ms: Some(30000),
             idle_timeout_ms: Some(60000),
+            session_label: self.config.session_label.clone(),
         };
         // Use a standard timeout for handshake during reconnect
         let _ = self

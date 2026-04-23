@@ -233,6 +233,12 @@ impl DebuggerUI {
                 format!("Paused: {}", self.engine.is_paused()),
                 crate::logging::LogLevel::Info,
             );
+            if let Some(reason) = self.engine.pause_reason_label() {
+                crate::logging::log_display(
+                    format!("Pause reason: {}", reason),
+                    crate::logging::LogLevel::Info,
+                );
+            }
             if let Some(output) = &self.last_output {
                 crate::logging::log_display(
                     format!("Last result: {}", output),

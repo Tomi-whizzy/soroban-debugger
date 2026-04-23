@@ -1095,6 +1095,18 @@ pub struct ServerArgs {
     /// Filter storage view to only show keys matching pattern (repeatable)
     #[arg(long, value_name = "PATTERN")]
     pub storage_filter: Vec<String>,
+
+    /// Show contract events emitted during execution
+    #[arg(long)]
+    pub show_events: bool,
+
+    /// Filter events by topic pattern (repeatable)
+    #[arg(long, value_name = "PATTERN")]
+    pub event_filter: Vec<String>,
+
+    /// Mock cross-contract return: CONTRACT_ID.function=return_value (repeatable)
+    #[arg(long, value_name = "CONTRACT_ID.function=return_value")]
+    pub mock: Vec<String>,
 }
 
 #[derive(Parser)]
@@ -1126,6 +1138,10 @@ pub struct RemoteArgs {
     /// TLS CA certificate file path (optional, for self-signed certs)
     #[arg(long)]
     pub tls_ca: Option<PathBuf>,
+
+    /// Optional label for the remote session (helps identify sessions in logs)
+    #[arg(long)]
+    pub session_label: Option<String>,
 
     /// Function arguments as JSON array
     #[arg(short, long)]

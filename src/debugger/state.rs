@@ -4,6 +4,28 @@ use crate::output::InvocationReason;
 use crate::runtime::instruction::Instruction;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PauseReason {
+    Breakpoint,
+    StepBoundary,
+    Panic,
+    EndOfExecution,
+    UserInterrupt,
+}
+
+impl PauseReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Breakpoint => "breakpoint",
+            Self::StepBoundary => "step_boundary",
+            Self::Panic => "panic",
+            Self::EndOfExecution => "end_of_execution",
+            Self::UserInterrupt => "user_interrupt",
+        }
+    }
+}
+
 /// Represents the current state of the debugger.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DebugState {
@@ -18,6 +40,7 @@ pub struct DebugState {
     instructions: Vec<Instruction>,
     instruction_debug_enabled: bool,
     call_stack: CallStackInspector,
+    pause_reason: Option<PauseReason>,
 }
 
 impl DebugState {
@@ -33,6 +56,7 @@ impl DebugState {
             instructions: Vec::new(),
             instruction_debug_enabled: false,
             call_stack: CallStackInspector::new(),
+            pause_reason: None,
         }
     }
 
@@ -196,6 +220,18 @@ impl DebugState {
         &mut self.call_stack
     }
 
+    pub fn set_pause_reason(&mut self, reason: PauseReason) {
+        self.pause_reason = Some(reason);
+    }
+
+    pub fn clear_pause_reason(&mut self) {
+        self.pause_reason = None;
+    }
+
+    pub fn pause_reason(&self) -> Option<PauseReason> {
+        self.pause_reason
+    }
+
     pub fn reset(&mut self) {
         self.current_function = None;
         self.current_args = None;
@@ -203,6 +239,7 @@ impl DebugState {
         self.instruction_pointer.reset();
         self.current_instruction = self.instructions.first().cloned();
         self.call_stack.clear();
+        self.pause_reason = None;
     }
 
     pub fn get_instruction_context(&self, context_size: usize) -> Vec<(usize, &Instruction, bool)> {

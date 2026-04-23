@@ -259,9 +259,7 @@ The following features are **not available** in the extension.
 | TLS configuration           | `--tls-cert`, `--tls-key`                                                                      | Use CLI server/remote commands directly                                |
 | Storage export              | `--export-storage <file>`                                                                      | Use `soroban-debug run --export-storage` in a terminal                 |
 | Storage import              | `--import-storage <file>`                                                                      | Use `snapshotPath` in `launch.json` for initial state                  |
-| Event display and filtering | `--show-events`, `--event-filter`                                                              | Use `soroban-debug run --show-events` in a terminal                    |
 | Dry-run mode                | `--dry-run`                                                                                    | Use `dryRun: true` in `launch.json`                                    |
-| Cross-contract mocking      | `--mock CONTRACT.fn=value`                                                                     | Use `soroban-debug run --mock` in a terminal                           |
 | Conditional breakpoints     | (not in CLI either)                                                                            | Not supported on either surface                                        |
 | Hit-count conditions        | (not in CLI either)                                                                            | Not supported on either surface                                        |
 | Log points                  | (not in CLI either)                                                                            | Not supported on either surface                                        |
@@ -345,6 +343,52 @@ You can configure timeouts in either place:
 | Repeated reconnect/disconnect behavior | Unstable loopback path, server crash, or backend health issue | Turn on `"trace": true`, inspect the "Soroban Debugger" output channel, and compare against the CLI troubleshooting guide. |
 
 For the full CLI + VS Code matrix, see [docs/remote-troubleshooting.md](../../docs/remote-troubleshooting.md).
+
+### Event Capture and Filters
+
+To stream contract events into the Debug Console, enable `showEvents`. You can optionally add
+`eventFilter` entries to reduce noise. Filters are case-insensitive substrings by default, or
+regex patterns when prefixed with `re:`.
+
+Example:
+
+```json
+{
+  "name": "Soroban: Debug Contract",
+  "type": "soroban",
+  "request": "launch",
+  "contractPath": "${workspaceFolder}/target/wasm32-unknown-unknown/release/contract.wasm",
+  "entrypoint": "main",
+  "args": [],
+  "showEvents": true,
+  "eventFilter": ["transfer", "re:^fn_.*"],
+  "binaryPath": "${workspaceFolder}/target/debug/soroban-debug"
+}
+```
+
+Events appear in the Debug Console with an `[event]` prefix.
+
+### Cross-Contract Mocking
+
+Use `mock` to stub cross-contract calls with deterministic return values. Each entry is
+`CONTRACT_ID.function=return_value`.
+
+Example:
+
+```json
+{
+  "name": "Soroban: Debug Contract",
+  "type": "soroban",
+  "request": "launch",
+  "contractPath": "${workspaceFolder}/target/wasm32-unknown-unknown/release/contract.wasm",
+  "entrypoint": "main",
+  "args": [],
+  "mock": [
+    "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.transfer=123",
+    "CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB.balance={\"type\":\"i64\",\"value\":\"42\"}"
+  ]
+}
+```
 
 ### Debugging the Extension Itself
 

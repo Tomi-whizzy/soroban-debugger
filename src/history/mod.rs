@@ -54,6 +54,17 @@ pub struct RunHistory {
     pub memory_used: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteSessionRecord {
+    pub session_id: String,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub remote_addr: String,
+    pub client_name: String,
+    pub client_version: String,
+}
+
 /// Retention policy controlling how many records to keep and their maximum age.
 ///
 /// Both fields are optional; when `None` that dimension is unconstrained.
@@ -259,6 +270,25 @@ impl HistoryManager {
         Ok(history)
     }
 
+    pub fn append_remote_session(&self, record: RemoteSessionRecord) -> Result<()> {
+        let path = self.remote_sessions_path();
+        let mut records = if path.exists() {
+            let file = File::open(&path).map_err(|e| {
+                DebuggerError::FileError(format!(
+                    "Failed to open remote session history {:?}: {}",
+                    path, e
+                ))
+            })?;
+            let reader = BufReader::new(file);
+            serde_json::from_reader(reader).unwrap_or_else(|_| Vec::new())
+        } else {
+            Vec::new()
+        };
+
+        records.push(record);
+        write_json_atomically(&path, &records)
+    }
+
     /// Append a new record optimizing with BufWriter.
     ///
     /// No retention policy is applied. Use [`append_record_with_policy`] to
@@ -387,6 +417,15 @@ impl HistoryManager {
             ))
         })?;
         Ok(())
+    }
+
+    fn remote_sessions_path(&self) -> PathBuf {
+        let parent = self
+            .file_path
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        parent.join("remote_sessions.json")
     }
 
     /// Filter historical data based on optional parameters.

@@ -37,6 +37,9 @@ export interface DebuggerProcessConfig {
   storageFilter?: string[];
   repeat?: number;
   dryRun?: boolean;
+  showEvents?: boolean;
+  eventFilter?: string[];
+  mock?: string[];
   /**
    * Path to a TLS certificate file for secure server connections.
    */
@@ -57,6 +60,7 @@ export interface DebuggerExecutionResult {
   paused: boolean;
   completed: boolean;
   sourceLocation?: SourceLocation;
+  pauseReason?: string;
 }
 
 export interface DebuggerInspection {
@@ -66,6 +70,7 @@ export interface DebuggerInspection {
   paused: boolean;
   callStack: string[];
   sourceLocation?: SourceLocation;
+  pauseReason?: string;
 }
 
 export interface DebuggerContinueResult {
@@ -73,6 +78,7 @@ export interface DebuggerContinueResult {
   output?: string;
   paused: boolean;
   sourceLocation?: SourceLocation;
+  pauseReason?: string;
 }
 
 export interface DebuggerVersionInfo {
@@ -121,6 +127,9 @@ export interface LaunchPreflightIssue {
     | "host"
     | "token"
     | "batchArgs"
+    | "showEvents"
+    | "eventFilter"
+    | "mock"
     | "tlsCert"
     | "tlsKey";
   message: string;
@@ -194,7 +203,7 @@ export function formatProtocolMismatchMessage(
 }
 
 type DebugRequest =
-  | { type: 'Handshake'; client_name: string; client_version: string; protocol_min: number; protocol_max: number }
+  | { type: 'Handshake'; client_name: string; client_version: string; protocol_min: number; protocol_max: number; session_label?: string }
   | { type: 'Authenticate'; token: string }
   | { type: 'LoadContract'; contract_path: string }
   | { type: 'Execute'; function: string; args?: string }
@@ -223,6 +232,9 @@ type DebugResponse =
       protocol_min: number;
       protocol_max: number;
       selected_version: number;
+      session_id?: string;
+      session_created_at?: string;
+      session_label?: string;
     }
   | {
       type: "IncompatibleProtocol";
@@ -241,12 +253,14 @@ type DebugResponse =
       error?: string;
       paused: boolean;
       completed: boolean;
+      pause_reason?: string;
     }
   | {
       type: "StepResult";
       paused: boolean;
       current_function?: string;
       step_count: number;
+      pause_reason?: string;
     }
   | {
       type: "ContinueResult";
@@ -254,6 +268,7 @@ type DebugResponse =
       output?: string;
       error?: string;
       paused: boolean;
+      pause_reason?: string;
     }
   | {
       type: "InspectionResult";
@@ -262,6 +277,7 @@ type DebugResponse =
       step_count: number;
       paused: boolean;
       call_stack: string[];
+      pause_reason?: string;
     }
   | { type: "StorageState"; storage_json: string }
   | { type: "SnapshotLoaded"; summary: string }
@@ -542,6 +558,7 @@ export class DebuggerProcess {
       output: response.output,
       paused: response.paused,
       completed: response.completed,
+      pauseReason: response.pause_reason,
     };
   }
 
@@ -585,6 +602,7 @@ export class DebuggerProcess {
     paused: boolean;
     current_function?: string;
     step_count: number;
+    pause_reason?: string;
   }> {
     const response = await this.sendRequest({ type: "StepIn" });
     this.expectResponse(response, "StepResult");
@@ -595,6 +613,7 @@ export class DebuggerProcess {
     paused: boolean;
     current_function?: string;
     step_count: number;
+    pause_reason?: string;
   }> {
     const response = await this.sendRequest({ type: "Next" });
     this.expectResponse(response, "StepResult");
@@ -605,6 +624,7 @@ export class DebuggerProcess {
     paused: boolean;
     current_function?: string;
     step_count: number;
+    pause_reason?: string;
   }> {
     const response = await this.sendRequest({ type: "StepOut" });
     this.expectResponse(response, "StepResult");
@@ -621,6 +641,7 @@ export class DebuggerProcess {
       completed: response.completed,
       output: response.output,
       paused: response.paused,
+      pauseReason: response.pause_reason,
     };
   }
 
@@ -633,6 +654,7 @@ export class DebuggerProcess {
       stepCount: response.step_count,
       paused: response.paused,
       callStack: response.call_stack,
+      pauseReason: response.pause_reason,
     };
   }
 
@@ -865,6 +887,22 @@ export class DebuggerProcess {
 
     if (this.config.repeat && this.config.repeat > 1) {
       args.push("--repeat", String(this.config.repeat));
+    }
+
+    if (this.config.showEvents) {
+      args.push("--show-events");
+    }
+
+    if (this.config.eventFilter && this.config.eventFilter.length > 0) {
+      for (const filter of this.config.eventFilter) {
+        args.push("--event-filter", filter);
+      }
+    }
+
+    if (this.config.mock && this.config.mock.length > 0) {
+      for (const spec of this.config.mock) {
+        args.push("--mock", spec);
+      }
     }
 
     return args;
@@ -1112,6 +1150,7 @@ export class DebuggerProcess {
           client_version: extensionVersion,
           protocol_min: WIRE_PROTOCOL_MIN_VERSION,
           protocol_max: WIRE_PROTOCOL_MAX_VERSION,
+          session_label: undefined,
         },
         { timeoutMs: 2_500 },
       );
@@ -1324,6 +1363,57 @@ export async function validateLaunchConfig(
     }
   }
 
+  if (config.showEvents !== undefined && typeof config.showEvents !== "boolean") {
+    issues.push({
+      field: "showEvents",
+      message: "Launch config field 'showEvents' must be a boolean.",
+      expected: "Either true or false.",
+      quickFixes: ["openLaunchConfig"],
+    });
+  }
+
+  if (config.eventFilter !== undefined) {
+    if (!Array.isArray(config.eventFilter)) {
+      issues.push({
+        field: "eventFilter",
+        message: "Launch config field 'eventFilter' must be an array of strings.",
+        expected: "An array like ['topic:transfer', 're:^fn_.*'].",
+        quickFixes: ["openLaunchConfig"],
+      });
+    } else {
+      for (const filter of config.eventFilter) {
+        if (typeof filter !== "string" || filter.trim().length === 0) {
+          issues.push({
+            field: "eventFilter",
+            message: "Launch config field 'eventFilter' contains an empty or non-string pattern.",
+            expected: "Each event filter entry must be a non-empty string.",
+            quickFixes: ["openLaunchConfig"],
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  if (config.mock !== undefined) {
+    if (!Array.isArray(config.mock)) {
+      issues.push({
+        field: "mock",
+        message: "Launch config field 'mock' must be an array of mock specs.",
+        expected: "An array like ['CONTRACT_ID.function=value'].",
+        quickFixes: ["openLaunchConfig"],
+      });
+    } else {
+      for (const spec of config.mock) {
+        const mockIssue = validateMockSpec(spec);
+        if (mockIssue) {
+          issues.push(mockIssue);
+          break;
+        }
+      }
+    }
+  }
+
   if (config.tlsCert || config.tlsKey) {
     if (!config.tlsCert) {
       issues.push({
@@ -1411,6 +1501,42 @@ function pushFileIssue(
       quickFixes,
     });
   }
+}
+
+function validateMockSpec(spec: unknown): LaunchPreflightIssue | null {
+  if (typeof spec !== "string" || spec.trim().length === 0) {
+    return {
+      field: "mock",
+      message: "Launch config field 'mock' contains an empty or non-string entry.",
+      expected: "Mock spec format: CONTRACT_ID.function=return_value",
+      quickFixes: ["openLaunchConfig"],
+    };
+  }
+
+  const raw = spec.trim();
+  const parts = raw.split("=");
+  if (parts.length !== 2) {
+    return {
+      field: "mock",
+      message: `Invalid mock spec '${raw}'. Expected exactly one '=' separator.`,
+      expected: "Mock spec format: CONTRACT_ID.function=return_value",
+      quickFixes: ["openLaunchConfig"],
+    };
+  }
+
+  const signature = parts[0].trim();
+  const returnValue = parts[1].trim();
+  const sigSplit = signature.lastIndexOf(".");
+  if (sigSplit <= 0 || sigSplit >= signature.length - 1 || returnValue.length === 0) {
+    return {
+      field: "mock",
+      message: `Invalid mock spec '${raw}'.`,
+      expected: "Mock spec format: CONTRACT_ID.function=return_value",
+      quickFixes: ["openLaunchConfig"],
+    };
+  }
+
+  return null;
 }
 
 function isCommandOnPath(command: string): boolean {

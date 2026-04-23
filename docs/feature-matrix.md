@@ -139,10 +139,10 @@ For VS Code users, this table maps CLI flags to their `launch.json` equivalents.
 | `--tls-key` | `tlsKey` | YES |
 | `--import-storage` | Use `snapshotPath` instead | PARTIAL |
 | `--export-storage` | (none) | NO |
-| `--show-events` | (none) | NO |
-| `--event-filter` | (none) | NO |
+| `--show-events` | `showEvents` | YES |
+| `--event-filter` | `eventFilter` | YES |
 | `--dry-run` | `dryRun` | YES |
-| `--mock` | (none) | NO |
+| `--mock` | `mock` | YES |
 
 ---
 

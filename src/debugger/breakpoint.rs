@@ -91,6 +91,7 @@ pub struct BreakpointSpec {
 pub struct BreakpointHit {
     pub should_pause: bool,
     pub log_messages: Vec<String>,
+    pub pause_reason: Option<String>,
 }
 
 /// Manages breakpoints during debugging
@@ -265,6 +266,7 @@ impl BreakpointManager {
         Ok(Some(BreakpointHit {
             should_pause: !bp.is_log_point(),
             log_messages,
+            pause_reason: (!bp.is_log_point()).then(|| "breakpoint".to_string()),
         }))
     }
 

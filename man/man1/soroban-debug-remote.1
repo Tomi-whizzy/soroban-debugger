@@ -4,7 +4,7 @@
 .SH NAME
 remote \- Connect to remote debug server
 .SH SYNOPSIS
-\fBremote\fR <\fB\-r\fR|\fB\-\-remote\fR> [\fB\-t\fR|\fB\-\-token\fR] [\fB\-c\fR|\fB\-\-contract\fR] [\fB\-f\fR|\fB\-\-function\fR] [\fB\-\-tls\-cert\fR] [\fB\-\-tls\-key\fR] [\fB\-\-tls\-ca\fR] [\fB\-a\fR|\fB\-\-args\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIremote and server\fR]
+\fBremote\fR <\fB\-r\fR|\fB\-\-remote\fR> [\fB\-t\fR|\fB\-\-token\fR] [\fB\-c\fR|\fB\-\-contract\fR] [\fB\-f\fR|\fB\-\-function\fR] [\fB\-\-tls\-cert\fR] [\fB\-\-tls\-key\fR] [\fB\-\-tls\-ca\fR] [\fB\-\-session\-label\fR] [\fB\-a\fR|\fB\-\-args\fR] [\fB\-\-connect\-timeout\-ms\fR] [\fB\-\-timeout\-ms\fR] [\fB\-\-inspect\-timeout\-ms\fR] [\fB\-\-storage\-timeout\-ms\fR] [\fB\-\-retry\-attempts\fR] [\fB\-\-retry\-base\-delay\-ms\fR] [\fB\-\-retry\-max\-delay\-ms\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIremote and server\fR]
 .SH DESCRIPTION
 Connect to remote debug server
 .SH OPTIONS
@@ -30,11 +30,63 @@ TLS private key file path (optional)
 \fB\-\-tls\-ca\fR \fI<TLS_CA>\fR
 TLS CA certificate file path (optional, for self\-signed certs)
 .TP
+\fB\-\-session\-label\fR \fI<SESSION_LABEL>\fR
+Optional label for the remote session (helps identify sessions in logs)
+.TP
 \fB\-a\fR, \fB\-\-args\fR \fI<ARGS>\fR
 Function arguments as JSON array
 .TP
+\fB\-\-connect\-timeout\-ms\fR \fI<MS>\fR [default: 10000]
+Timeout in milliseconds for the initial TCP connection to the remote server.
+
+Use this when the server is on a slow or restricted network and the default connect attempt feels hung or fails unpredictably.  Distinct from \-\-timeout\-ms, which governs individual request/response round\-trips after the connection is already established.
+
+Default: 10 000 ms (10 seconds).
+.RS
+May also be specified with the \fBSOROBAN_DEBUG_CONNECT_TIMEOUT_MS\fR environment variable. 
+.RE
+.TP
+\fB\-\-timeout\-ms\fR \fI<MS>\fR [default: 30000]
+Per\-request timeout in milliseconds for regular operations (execute, storage, inspect).
+
+Default: 30 000 ms (30 seconds).
+.RS
+May also be specified with the \fBSOROBAN_DEBUG_REQUEST_TIMEOUT_MS\fR environment variable. 
+.RE
+.TP
+\fB\-\-inspect\-timeout\-ms\fR \fI<MS>\fR
+Per\-request timeout in milliseconds specifically for Inspect calls.
+
+Inspect fetches execution state metadata and can be slower than a simple ping. Defaults to \-\-timeout\-ms when not provided.
+.RS
+May also be specified with the \fBSOROBAN_DEBUG_INSPECT_TIMEOUT_MS\fR environment variable. 
+.RE
+.TP
+\fB\-\-storage\-timeout\-ms\fR \fI<MS>\fR
+Per\-request timeout in milliseconds specifically for GetStorage calls.
+
+Storage fetches can be large; set this higher than \-\-timeout\-ms for contracts with many storage keys.  Defaults to \-\-timeout\-ms when not provided.
+.RS
+May also be specified with the \fBSOROBAN_DEBUG_STORAGE_TIMEOUT_MS\fR environment variable. 
+.RE
+.TP
+\fB\-\-retry\-attempts\fR \fI<N>\fR [default: 3]
+Maximum number of retry attempts for idempotent requests (ping, inspect, storage).
+
+Default: 3.
+.TP
+\fB\-\-retry\-base\-delay\-ms\fR \fI<MS>\fR [default: 200]
+Base delay in milliseconds between retry attempts (exponential back\-off).
+
+Default: 200 ms.
+.TP
+\fB\-\-retry\-max\-delay\-ms\fR \fI<MS>\fR [default: 2000]
+Maximum delay in milliseconds between retry attempts.
+
+Default: 2 000 ms.
+.TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)
 .SH "Remote and Server"
 .TP
 remote\-inspect(1)

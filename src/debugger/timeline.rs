@@ -1,5 +1,6 @@
 use crate::inspector::budget::BudgetInfo;
 use crate::inspector::stack::CallFrame;
+use crate::debugger::state::PauseReason;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -41,6 +42,9 @@ pub struct ExecutionSnapshot {
     pub timestamp: u128,
     /// Function call metadata if captured at this step
     pub function_call: Option<FunctionCallSnapshot>,
+    /// Pause reason classification for this snapshot when execution is paused
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pause_reason: Option<PauseReason>,
 }
 
 /// Manages the timeline of execution snapshots for time-travel debugging.
