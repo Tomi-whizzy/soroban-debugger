@@ -380,7 +380,7 @@ pub struct RunArgs {
     #[arg(long, default_value = "1000")]
     pub ttl_warning_threshold: u32,
 
-    /// Export execution trace to JSON file
+    /// Export execution trace to JSON file and emit a replay manifest sidecar
     #[arg(long)]
     pub trace_output: Option<PathBuf>,
     /// Path to file where execution results should be saved

@@ -7,6 +7,44 @@ use std::io::{BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
+pub fn write_json_atomically<T: Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            fs::create_dir_all(parent).map_err(|e| {
+                DebuggerError::FileError(format!(
+                    "Failed to create output directory {:?}: {}",
+                    parent, e
+                ))
+            })?;
+        }
+    }
+
+    let tmp_path = path.with_extension("tmp");
+    let file = File::create(&tmp_path).map_err(|e| {
+        DebuggerError::FileError(format!(
+            "Failed to create temporary output file {:?}: {}",
+            tmp_path, e
+        ))
+    })?;
+    let mut writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(&mut writer, value).map_err(|e| {
+        DebuggerError::FileError(format!("Failed to serialize JSON to {:?}: {}", path, e))
+    })?;
+    writer.flush().map_err(|e| {
+        DebuggerError::FileError(format!(
+            "Failed to flush temporary output {:?}: {}",
+            tmp_path, e
+        ))
+    })?;
+    fs::rename(&tmp_path, path).map_err(|e| {
+        DebuggerError::FileError(format!(
+            "Failed to replace output file {:?} with {:?}: {}",
+            path, tmp_path, e
+        ))
+    })?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunHistory {
     pub date: String,

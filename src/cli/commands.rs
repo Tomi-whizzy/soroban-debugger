@@ -968,6 +968,14 @@ pub fn run(args: RunArgs, verbosity: Verbosity) -> Result<()> {
                 print_warning(format!("Failed to write trace to {:?}: {}", trace_path, e));
             } else {
                 print_success(format!("Successfully exported trace to {:?}", trace_path));
+                if let Err(e) =
+                    export_replay_artifact_manifest(&trace, trace_path, contract.as_ref(), &args)
+                {
+                    print_warning(format!(
+                        "Failed to write replay artifact manifest for {:?}: {}",
+                        trace_path, e
+                    ));
+                }
             }
         }
     }
@@ -1058,6 +1066,70 @@ fn build_execution_trace(
         call_sequence,
         events: trace_events,
     }
+}
+
+fn export_replay_artifact_manifest(
+    trace: &crate::compare::ExecutionTrace,
+    trace_path: &std::path::Path,
+    contract_path: &std::path::Path,
+    args: &RunArgs,
+) -> Result<()> {
+    let manifest_path = crate::compare::ExecutionTrace::manifest_path_for_trace(trace_path);
+    let mut manifest = trace.to_replay_artifact_manifest(trace_path);
+
+    manifest.files.push(crate::output::ReplayArtifactFile {
+        kind: crate::output::ReplayArtifactKind::Manifest,
+        path: manifest_path.display().to_string(),
+        description: Some("Replay artifact manifest".to_string()),
+    });
+    manifest.files.push(crate::output::ReplayArtifactFile {
+        kind: crate::output::ReplayArtifactKind::ContractWasm,
+        path: contract_path.display().to_string(),
+        description: Some("Contract WASM used to generate the trace".to_string()),
+    });
+
+    if let Some(path) = &args.network_snapshot {
+        manifest.files.push(crate::output::ReplayArtifactFile {
+            kind: crate::output::ReplayArtifactKind::NetworkSnapshot,
+            path: path.display().to_string(),
+            description: Some("Network snapshot loaded before execution".to_string()),
+        });
+    }
+    if let Some(path) = &args.import_storage {
+        manifest.files.push(crate::output::ReplayArtifactFile {
+            kind: crate::output::ReplayArtifactKind::StorageImport,
+            path: path.display().to_string(),
+            description: Some("Imported storage seed used before execution".to_string()),
+        });
+    }
+    if let Some(path) = &args.export_storage {
+        manifest.files.push(crate::output::ReplayArtifactFile {
+            kind: crate::output::ReplayArtifactKind::StorageExport,
+            path: path.display().to_string(),
+            description: Some("Exported storage state captured after execution".to_string()),
+        });
+    }
+    if let Some(path) = &args.save_output {
+        manifest.files.push(crate::output::ReplayArtifactFile {
+            kind: crate::output::ReplayArtifactKind::OutputReport,
+            path: path.display().to_string(),
+            description: Some("Saved command output for this run".to_string()),
+        });
+    }
+    if let Some(path) = &args.generate_test {
+        manifest.files.push(crate::output::ReplayArtifactFile {
+            kind: crate::output::ReplayArtifactKind::GeneratedTest,
+            path: path.display().to_string(),
+            description: Some("Generated reproduction test derived from the trace".to_string()),
+        });
+    }
+
+    crate::history::write_json_atomically(&manifest_path, &manifest)?;
+    print_success(format!(
+        "Replay artifact manifest written to {:?}",
+        manifest_path
+    ));
+    Ok(())
 }
 
 /// Execute run command in dry-run mode.

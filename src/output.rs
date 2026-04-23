@@ -48,6 +48,41 @@ impl InvocationReason {
     }
 }
 
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReplayArtifactKind {
+    Manifest,
+    Trace,
+    ContractWasm,
+    NetworkSnapshot,
+    StorageImport,
+    StorageExport,
+    OutputReport,
+    GeneratedTest,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ReplayArtifactFile {
+    pub kind: ReplayArtifactKind,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ReplayArtifactManifest {
+    pub schema_version: String,
+    pub artifact_group: String,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function: Option<String>,
+    pub files: Vec<ReplayArtifactFile>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct PluginIncidentReport {
     pub plugin: String,

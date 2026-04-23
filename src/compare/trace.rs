@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Top-level execution trace that is serialized to / deserialized from JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,5 +123,28 @@ impl ExecutionTrace {
         Ok(serde_json::to_string_pretty(self).map_err(|e| {
             crate::DebuggerError::FileError(format!("Failed to serialize trace: {}", e))
         })?)
+    }
+
+    pub fn manifest_path_for_trace(trace_path: &Path) -> PathBuf {
+        trace_path.with_extension("manifest.json")
+    }
+
+    pub fn to_replay_artifact_manifest(
+        &self,
+        trace_path: &Path,
+    ) -> crate::output::ReplayArtifactManifest {
+        crate::output::ReplayArtifactManifest {
+            schema_version: crate::output::SCHEMA_VERSION.to_string(),
+            artifact_group: "replay_artifacts".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            label: self.label.clone(),
+            contract: self.contract.clone(),
+            function: self.function.clone(),
+            files: vec![crate::output::ReplayArtifactFile {
+                kind: crate::output::ReplayArtifactKind::Trace,
+                path: trace_path.display().to_string(),
+                description: Some("Primary execution trace used for replay".to_string()),
+            }],
+        }
     }
 }
