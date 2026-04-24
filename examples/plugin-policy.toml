@@ -1,0 +1,18 @@
+# Example: .soroban-debug.toml
+# This file demonstrates how to configure the plugin sandbox policy.
+
+[plugins.sandbox]
+# Allow plugins to read files (e.g., source code, configuration)
+allow_file_read = true
+
+# Prevent plugins from modifying files on the host system
+allow_file_write = false
+
+# Prevent plugins from making outbound network calls
+allow_network = false
+
+# Limit plugin execution to 2 seconds per hook/command
+max_execution_duration_ms = 2000
+
+# Prevent plugins from adding custom CLI commands
+allow_command_registration = false

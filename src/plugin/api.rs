@@ -35,6 +35,10 @@ pub enum PluginError {
     #[error("Plugin trust policy violation: {0}")]
     TrustViolation(String),
 
+    /// Sandbox policy violation
+    #[error("Plugin sandbox policy violation: {0}")]
+    SandboxViolation(String),
+
     /// Plugin execution timed out under containment policy
     #[error("Plugin timeout: {0}")]
     Timeout(String),
