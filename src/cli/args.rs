@@ -224,6 +224,9 @@ pub enum Commands {
     #[command(subcommand_help_heading = "Developer Utilities")]
     HistoryPrune(HistoryPruneArgs),
 
+    /// Report runtime health and diagnostics for troubleshooting
+    Doctor(DoctorArgs),
+
     /// Plugin-provided subcommand (loaded at runtime)
     #[command(external_subcommand)]
     External(Vec<String>),
@@ -404,6 +407,11 @@ pub struct RunArgs {
     /// Export execution trace to JSON file and emit a replay manifest sidecar
     #[arg(long)]
     pub trace_output: Option<PathBuf>,
+
+    /// Export a compact timeline narrative (pause points + key deltas) to JSON file
+    #[arg(long, value_name = "FILE")]
+    pub timeline_output: Option<PathBuf>,
+
     /// Path to file where execution results should be saved
     #[arg(long, value_name = "FILE")]
     pub save_output: Option<PathBuf>,
@@ -1139,13 +1147,23 @@ pub struct RemoteArgs {
     /// the connection is already established.
     ///
     /// Default: 10 000 ms (10 seconds).
-    #[arg(long, value_name = "MS", default_value = "10000", env = "SOROBAN_DEBUG_CONNECT_TIMEOUT_MS")]
+    #[arg(
+        long,
+        value_name = "MS",
+        default_value = "10000",
+        env = "SOROBAN_DEBUG_CONNECT_TIMEOUT_MS"
+    )]
     pub connect_timeout_ms: u64,
 
     /// Per-request timeout in milliseconds for regular operations (execute, storage, inspect).
     ///
     /// Default: 30 000 ms (30 seconds).
-    #[arg(long, value_name = "MS", default_value = "30000", env = "SOROBAN_DEBUG_REQUEST_TIMEOUT_MS")]
+    #[arg(
+        long,
+        value_name = "MS",
+        default_value = "30000",
+        env = "SOROBAN_DEBUG_REQUEST_TIMEOUT_MS"
+    )]
     pub timeout_ms: u64,
 
     /// Per-request timeout in milliseconds specifically for Inspect calls.
@@ -1265,4 +1283,28 @@ pub struct ScenarioArgs {
     /// Use 0 to disable the timeout entirely.
     #[arg(long)]
     pub timeout: Option<u64>,
+}
+
+/// Arguments for the doctor/health command
+#[derive(Parser)]
+pub struct DoctorArgs {
+    /// Output format (pretty, json)
+    #[arg(long, value_enum, default_value = "pretty")]
+    pub format: OutputFormat,
+
+    /// Optional remote debug server to probe (e.g., localhost:9229)
+    #[arg(long)]
+    pub remote: Option<String>,
+
+    /// Authentication token for remote probe (if required by server)
+    #[arg(long)]
+    pub token: Option<String>,
+
+    /// Timeout for remote checks in milliseconds
+    #[arg(long, default_value = "3000")]
+    pub timeout_ms: u64,
+
+    /// Optional path to a VS Code extension `package.json` to report version hints
+    #[arg(long, value_name = "FILE")]
+    pub vscode_manifest: Option<PathBuf>,
 }

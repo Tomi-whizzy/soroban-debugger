@@ -9,8 +9,13 @@ use crate::cli::args::{
     OutputFormat, ProfileArgs, RemoteAction, RemoteArgs, ReplArgs, ReplayArgs, RunArgs,
     ScenarioArgs, ServerArgs, SymbolicArgs, SymbolicProfile, TuiArgs, UpgradeCheckArgs, Verbosity,
 };
+use crate::cli::output::write_json_pretty_file;
 use crate::debugger::engine::DebuggerEngine;
 use crate::debugger::instruction_pointer::StepMode;
+use crate::debugger::timeline::{
+    TimelineDeltas, TimelineExport, TimelinePausePoint, TimelineRunInfo, TimelineStorageDelta,
+    TimelineWarning, TIMELINE_EXPORT_SCHEMA_VERSION,
+};
 use crate::history::{HistoryManager, RunHistory};
 use crate::inspector::events::{ContractEvent, EventInspector};
 use crate::logging;
@@ -24,6 +29,7 @@ use crate::ui::{run_dashboard, DebuggerUI};
 use crate::{DebuggerError, Result};
 use miette::WrapErr;
 use std::fs;
+use std::path::PathBuf;
 
 fn print_info(message: impl AsRef<str>) {
     if !Formatter::is_quiet() {
@@ -998,6 +1004,86 @@ pub fn run(args: RunArgs, verbosity: Verbosity) -> Result<()> {
                     ));
                 }
             }
+        }
+    }
+
+    if let Some(timeline_path) = &args.timeline_output {
+        print_info(format!(
+            "\nExporting timeline narrative to: {:?}",
+            timeline_path
+        ));
+
+        let stack_summary = engine
+            .state()
+            .lock()
+            .ok()
+            .map(|state| state.call_stack().get_stack().to_vec())
+            .unwrap_or_default();
+
+        let mut warnings = Vec::new();
+        if !storage_diff.triggered_alerts.is_empty() {
+            warnings.push(TimelineWarning {
+                kind: "storage_alert".to_string(),
+                message: format!(
+                    "Triggered storage alert(s): {}",
+                    storage_diff.triggered_alerts.join(", ")
+                ),
+            });
+        }
+
+        let events_count = json_events
+            .as_ref()
+            .map(|ev| ev.len())
+            .or_else(|| engine.executor().get_events().ok().map(|ev| ev.len()));
+
+        let storage_delta = if storage_diff.is_empty() {
+            None
+        } else {
+            Some(TimelineStorageDelta::from_storage_diff(&storage_diff, 200))
+        };
+
+        let mut pauses = Vec::new();
+        let hit_entry_breakpoint = args.breakpoint.iter().any(|bp| bp == function);
+        if engine.is_paused() && hit_entry_breakpoint {
+            pauses.push(TimelinePausePoint {
+                index: 0,
+                reason: "breakpoint".to_string(),
+                location: None,
+                call_stack: stack_summary.clone(),
+            });
+        }
+
+        let export = TimelineExport {
+            schema_version: TIMELINE_EXPORT_SCHEMA_VERSION,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            run: TimelineRunInfo {
+                contract_path: contract.to_string_lossy().to_string(),
+                wasm_sha256: Some(wasm_hash.clone()),
+                function: function.to_string(),
+                args_json: args.args.clone(),
+                result: Some(result.clone()),
+                error: None,
+                budget: Some(budget.clone()),
+                events_count,
+            },
+            pauses,
+            stack_summary,
+            deltas: TimelineDeltas {
+                storage: storage_delta,
+            },
+            warnings,
+        };
+
+        if let Err(e) = write_json_pretty_file(timeline_path, &export) {
+            print_warning(format!(
+                "Failed to write timeline narrative to {:?}: {}",
+                timeline_path, e
+            ));
+        } else {
+            print_success(format!(
+                "Successfully exported timeline narrative to {:?}",
+                timeline_path
+            ));
         }
     }
 
@@ -2509,6 +2595,167 @@ pub fn analyze(args: AnalyzeArgs, _verbosity: Verbosity) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+struct DoctorCheck {
+    ok: bool,
+    message: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct RemoteDoctorReport {
+    address: String,
+    connect: DoctorCheck,
+    handshake: Option<DoctorCheck>,
+    ping: Option<DoctorCheck>,
+    auth: Option<DoctorCheck>,
+    selected_protocol: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct DoctorReport {
+    binary: serde_json::Value,
+    config: serde_json::Value,
+    history: serde_json::Value,
+    plugins: serde_json::Value,
+    protocol: serde_json::Value,
+    remote: Option<RemoteDoctorReport>,
+    vscode_extension: serde_json::Value,
+}
+
+fn json_kv(key: &str, value: impl serde::Serialize) -> serde_json::Value {
+    serde_json::json!({ key: value })[key].clone()
+}
+
+fn check_ok(message: impl Into<String>) -> DoctorCheck {
+    DoctorCheck {
+        ok: true,
+        message: message.into(),
+    }
+}
+
+fn check_err(message: impl Into<String>) -> DoctorCheck {
+    DoctorCheck {
+        ok: false,
+        message: message.into(),
+    }
+}
+
+fn env_truthy(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .is_some_and(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+}
+
+fn read_repo_vscode_extension_version(manifest_path: Option<&PathBuf>) -> Option<String> {
+    let path = manifest_path.cloned().unwrap_or_else(|| {
+        PathBuf::from("extensions")
+            .join("vscode")
+            .join("package.json")
+    });
+    let text = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v.get("version")?.as_str().map(|s| s.to_string())
+}
+
+fn compute_default_history_path() -> Result<PathBuf> {
+    if let Ok(path) = std::env::var("SOROBAN_DEBUG_HISTORY_FILE") {
+        return Ok(PathBuf::from(path));
+    }
+
+    let home_dir = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| DebuggerError::FileError("Could not determine home directory".to_string()))?;
+    Ok(PathBuf::from(home_dir)
+        .join(".soroban-debug")
+        .join("history.json"))
+}
+
+fn history_file_status(path: &PathBuf) -> serde_json::Value {
+    let exists = path.exists();
+    let metadata = std::fs::metadata(path).ok();
+    let size = metadata.as_ref().map(|m| m.len());
+
+    let readable = std::fs::File::open(path).is_ok();
+    let writable = std::fs::OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(path)
+        .is_ok();
+
+    serde_json::json!({
+        "path": path,
+        "exists": exists,
+        "size_bytes": size,
+        "readable": readable || !exists,
+        "writable": writable || !exists,
+    })
+}
+
+fn config_status() -> serde_json::Value {
+    let path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE).to_path_buf();
+    let exists = path.exists();
+    let load = crate::config::Config::load();
+    let parse_ok = load.is_ok() || !exists;
+    let error = load.err().map(|e| e.to_string());
+
+    serde_json::json!({
+        "path": path,
+        "exists": exists,
+        "parse_ok": parse_ok,
+        "error": error,
+    })
+}
+
+fn plugin_status() -> serde_json::Value {
+    let disabled = env_truthy("SOROBAN_DEBUG_NO_PLUGINS");
+    let plugin_dir = crate::plugin::PluginLoader::default_plugin_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "<unknown>".to_string());
+
+    let discovered = crate::plugin::PluginLoader::default_plugin_dir()
+        .map(|dir| crate::plugin::PluginLoader::new(dir).discover_plugins())
+        .unwrap_or_default();
+
+    let registry = crate::plugin::registry::init_global_plugin_registry();
+    let stats = registry.read().map(|r| r.statistics()).unwrap_or_default();
+
+    serde_json::json!({
+        "disabled_via_env": disabled,
+        "plugin_dir": plugin_dir,
+        "discovered_manifests": discovered.len(),
+        "loaded_plugins": stats.total,
+        "provides_commands": stats.provides_commands,
+        "provides_formatters": stats.provides_formatters,
+        "supports_hot_reload": stats.supports_hot_reload,
+    })
+}
+
+fn protocol_status() -> serde_json::Value {
+    serde_json::json!({
+        "min": crate::server::protocol::PROTOCOL_MIN_VERSION,
+        "max": crate::server::protocol::PROTOCOL_MAX_VERSION,
+        "current": crate::server::protocol::PROTOCOL_VERSION,
+    })
+}
+
+fn binary_status() -> serde_json::Value {
+    serde_json::json!({
+        "name": env!("CARGO_PKG_NAME"),
+        "version": env!("CARGO_PKG_VERSION"),
+        "os": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+    })
+}
+
+fn vscode_extension_status(vscode_manifest: Option<&PathBuf>) -> serde_json::Value {
+    let version = read_repo_vscode_extension_version(vscode_manifest);
+    serde_json::json!({
+        "version_hint": version,
+        "wire_protocol_expected_min": crate::server::protocol::PROTOCOL_MIN_VERSION,
+        "wire_protocol_expected_max": crate::server::protocol::PROTOCOL_MAX_VERSION,
+    })
+}
+
 /// Run a scenario
 pub fn scenario(args: ScenarioArgs, _verbosity: Verbosity) -> Result<()> {
     crate::scenario::run_scenario(args, _verbosity)
@@ -2676,4 +2923,28 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("Failed to compute budget trend statistics"));
     }
+
+    #[test]
+    fn doctor_report_serializes_with_expected_sections() {
+        let history_path = std::env::temp_dir().join("soroban-debug-doctor-history.json");
+        let report = DoctorReport {
+            binary: binary_status(),
+            config: config_status(),
+            history: history_file_status(&history_path),
+            plugins: plugin_status(),
+            protocol: protocol_status(),
+            remote: None,
+            vscode_extension: vscode_extension_status(None),
+        };
+
+        let json = serde_json::to_value(&report).unwrap();
+        assert!(json.get("binary").is_some());
+        assert!(json.get("config").is_some());
+        assert!(json.get("history").is_some());
+        assert!(json.get("plugins").is_some());
+        assert!(json.get("protocol").is_some());
+        assert!(json.get("vscode_extension").is_some());
+    }
 }
+//
+///////

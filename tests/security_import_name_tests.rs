@@ -122,7 +122,7 @@ fn reentrancy_detection_handles_optional_function_metadata_with_depth() {
     let wasm = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
     let analyzer = SecurityAnalyzer::new();
     let trace = vec![
-        DynamicTraceEvent {
+        DynamicTraceEvent { invocation_reason: None, 
             sequence: 1,
             kind: DynamicTraceEventKind::CrossContractCall,
             message: "external call".to_string(),
@@ -132,8 +132,9 @@ fn reentrancy_detection_handles_optional_function_metadata_with_depth() {
             storage_key: None,
             storage_value: None,
             address: None,
+            invocation_reason: None,
         },
-        DynamicTraceEvent {
+        DynamicTraceEvent { invocation_reason: None, 
             sequence: 2,
             kind: DynamicTraceEventKind::StorageWrite,
             message: "update state".to_string(),
@@ -143,11 +144,18 @@ fn reentrancy_detection_handles_optional_function_metadata_with_depth() {
             storage_key: Some("balance:alice".to_string()),
             storage_value: Some("0".to_string()),
             address: None,
+            invocation_reason: None,
         },
     ];
 
     let report = analyzer
-        .analyze(&wasm, None, Some(&trace), &AnalyzerFilter::default(), "test_contract.wasm")
+        .analyze(
+            &wasm,
+            None,
+            Some(&trace),
+            &AnalyzerFilter::default(),
+            "test_contract.wasm",
+        )
         .expect("analysis failed");
 
     assert!(report

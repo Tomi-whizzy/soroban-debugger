@@ -32,15 +32,38 @@
     "commands": [
       {
         "command": "soroban-debugger.runLaunchPreflight",
-        "title": "Soroban: Run Launch Preflight",
+        "title": "Run Launch Preflight Check",
         "category": "Soroban"
       },
       {
         "command": "soroban-debugger.diagnoseSourceMap",
-        "title": "Soroban: Diagnose Source Maps for Current File",
+        "title": "Diagnose Source Map Health",
+        "category": "Soroban"
+      },
+      {
+        "command": "soroban-debugger.openDocs",
+        "title": "Quick-Open Documentation",
         "category": "Soroban"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "soroban-debugger",
+          "title": "Soroban Debugger",
+          "icon": "$(debug-console)"
+        }
+      ]
+    },
+    "views": {
+      "soroban-debugger": [
+        {
+          "id": "soroban-debugger.eventsView",
+          "name": "Contract Events",
+          "contextualTitle": "Soroban"
+        }
+      ]
+    },
     "configuration": {
       "title": "Soroban Debugger",
       "properties": {
@@ -52,7 +75,17 @@
         "soroban-debugger.connectTimeoutMs": {
           "type": "number",
           "default": 10000,
-          "description": "Timeout (ms) to wait for the backend server to become reachable during launch."
+          "description": "Timeout for connecting to the debugger server (ms)."
+        },
+        "soroban-debugger.defaultContractPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/target/wasm32-unknown-unknown/release/contract.wasm",
+          "description": "Default path to the contract WASM file."
+        },
+        "soroban-debugger.defaultSnapshotPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/snapshot.json",
+          "description": "Default path to the network snapshot JSON file."
         },
         "soroban-debugger.telemetry.enabled": {
           "type": "boolean",

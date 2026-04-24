@@ -63,7 +63,7 @@ pub struct SourceMapMappingPreview {
     pub location: SourceLocation,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SourceMapInspectionReport {
     pub mappings_count: usize,
     pub preview: Vec<SourceMapMappingPreview>,
@@ -71,6 +71,9 @@ pub struct SourceMapInspectionReport {
     pub diagnostics: Vec<SourceMapDiagnostic>,
     pub fallback_mode: String,
     pub fallback_message: String,
+    pub units_processed: usize,
+    pub units_with_line_program: usize,
+    pub coverage_ratio: f64,
 }
 
 /// Manages mapping from WASM offsets to source code locations
@@ -92,6 +95,8 @@ pub struct SourceMap {
     parse_count: usize,
     /// Diagnostics accumulated during DWARF parsing
     pub diagnostics: Vec<SourceMapDiagnostic>,
+    pub units_processed: usize,
+    pub units_with_line_program: usize,
 }
 
 /// Result of resolving a source breakpoint (file + line) to a concrete contract entrypoint breakpoint.
@@ -131,6 +136,8 @@ impl SourceMap {
             last_wasm_hash: None,
             parse_count: 0,
             diagnostics: Vec::new(),
+            units_processed: 0,
+            units_with_line_program: 0,
         }
     }
 
@@ -151,6 +158,8 @@ impl SourceMap {
         // Cache miss: clear stale data and re-parse.
         self.offsets.clear();
         self.last_wasm_hash = None;
+        self.units_processed = 0;
+        self.units_with_line_program = 0;
         self.code_section_range = crate::utils::wasm::code_section_range(wasm_bytes)?;
 
         let mut custom_sections: HashMap<String, &[u8]> = HashMap::new();
@@ -212,6 +221,11 @@ impl SourceMap {
                     continue; // try next unit
                 }
             };
+
+            self.units_processed += 1;
+            if unit.line_program.is_some() {
+                self.units_with_line_program += 1;
+            }
 
             if let Some(program) = unit.line_program.clone() {
                 let mut rows = program.rows();
@@ -329,6 +343,13 @@ impl SourceMap {
                 diagnostics,
                 fallback_mode,
                 fallback_message,
+                units_processed: source_map.units_processed,
+                units_with_line_program: source_map.units_with_line_program,
+                coverage_ratio: if source_map.units_processed > 0 {
+                    source_map.units_with_line_program as f64 / source_map.units_processed as f64
+                } else {
+                    0.0
+                },
             }),
             Err(err) => {
                 if mappings_count == 0 && diagnostics.is_empty() {
@@ -357,6 +378,14 @@ impl SourceMap {
                     diagnostics,
                     fallback_mode,
                     fallback_message,
+                    units_processed: source_map.units_processed,
+                    units_with_line_program: source_map.units_with_line_program,
+                    coverage_ratio: if source_map.units_processed > 0 {
+                        source_map.units_with_line_program as f64
+                            / source_map.units_processed as f64
+                    } else {
+                        0.0
+                    },
                 })
             }
         }

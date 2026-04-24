@@ -6,6 +6,20 @@
 
 A command-line debugger for Soroban smart contracts on the Stellar network. Debug your contracts interactively with breakpoints, step-through execution, state inspection, and budget tracking.
 
+## Table of Contents
+- [Quick Start](#quick-start)
+- [User Journeys](#user-journeys)
+- [Command Index](#command-index)
+- [Reference](#reference)
+  - [Supported Argument Types](#supported-argument-types)
+  - [Storage Filtering](#storage-filtering)
+  - [Exporting Execution Traces](#exporting-execution-traces)
+- [Interactive Commands](#interactive-command)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+
 ---
 
 ## Quick Start
@@ -36,6 +50,8 @@ For an interactive session with a terminal UI:
 ```bash
 soroban-debug interactive --contract my_contract.wasm --function hello
 ```
+
+For a comprehensive introduction, see the [Getting Started Guide](docs/getting-started.md).
 
 ---
 
@@ -202,11 +218,6 @@ An exported trace includes versioning, metadata, and full execution state:
 | `balance:*`      | Prefix | Keys starting with `balance:`          |
 | `re:^user_\d+$`  | Regex  | Keys matching the regex                |
 | `total_supply`   | Exact  | Only the key `total_supply`            |
-| Pattern         | Type   | Matches                       |
-| --------------- | ------ | ----------------------------- |
-| `balance:*`     | Prefix | Keys starting with `balance:` |
-| `re:^user_\d+$` | Regex  | Keys matching the regex       |
-| `total_supply`  | Exact  | Only the key `total_supply`   |
 
 ### Interactive Command
 
@@ -408,7 +419,7 @@ show_events = true
 | Incompatible protocol | Build version mismatch | Reinstall client/server from same release |
 | Auth failed | Token mismatch | Verify `--token` values match |
 
-See [Remote Troubleshooting Guide](docs/remote-troubleshooting.md) for more.
+For more scenarios, see the [Full FAQ](docs/faq.md) and [Remote Troubleshooting Guide](docs/remote-troubleshooting.md).
 
 ---
 
