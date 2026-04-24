@@ -294,5 +294,3 @@ enum ColorKind {
 }
 
 static COLOR_ENABLED: AtomicBool = AtomicBool::new(true);
-
-////////////////
