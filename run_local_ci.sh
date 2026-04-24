@@ -3,6 +3,7 @@ set -euo pipefail
 
 SANDBOX_MODE=0
 ALLOW_TEMP_CHECKS=1
+STRICT_MODE=0
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -14,6 +15,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --with-temp-checks)
             ALLOW_TEMP_CHECKS=1
+            shift
+            ;;
+        --strict)
+            STRICT_MODE=1
             shift
             ;;
         *)
@@ -50,20 +55,55 @@ if [[ "$SANDBOX_MODE" -eq 1 ]]; then
   echo "This gate is deterministic and avoids network/temp-dependent checks."
 fi
 
-echo
-echo "==> Formatting (cargo fmt --check)"
-cargo fmt --all -- --check
+if [[ "$STRICT_MODE" -eq 1 ]]; then
+  echo
+  echo "==> Strict mode enabled"
+  echo "Mirroring GitHub CI ordering and strictness."
+  
+  echo
+  echo "==> Compile Check (cargo check)"
+  RUSTFLAGS="-D warnings" cargo check --workspace --all-features
 
-echo
-echo "==> Clippy (deny warnings)"
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-echo
-echo "==> Tests (deny rustc warnings via RUSTFLAGS)"
-if [[ "$SANDBOX_MODE" -eq 1 ]]; then
+  echo
+  echo "==> Tests (cargo test)"
   RUSTFLAGS="-D warnings" cargo test --workspace
+
+  if [[ "$SANDBOX_MODE" -eq 0 ]]; then
+    echo
+    echo "==> Network Tests"
+    RUSTFLAGS="-D warnings" cargo test --workspace --features network-tests -- --nocapture
+
+    echo
+    echo "==> VS Code Extension Checks"
+    npm --prefix extensions/vscode ci
+    npm --prefix extensions/vscode run build
+    npm --prefix extensions/vscode run check:dist
+    npm --prefix extensions/vscode run test:all
+  fi
+  
+  echo
+  echo "==> Formatting (cargo fmt --check)"
+  cargo fmt --all -- --check
+
+  echo
+  echo "==> Clippy (deny warnings)"
+  cargo clippy --workspace --all-targets --all-features -- -D warnings
 else
-  RUSTFLAGS="-D warnings" cargo test --workspace --features network-tests
+  echo
+  echo "==> Formatting (cargo fmt --check)"
+  cargo fmt --all -- --check
+
+  echo
+  echo "==> Clippy (deny warnings)"
+  cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  echo
+  echo "==> Tests (deny rustc warnings via RUSTFLAGS)"
+  if [[ "$SANDBOX_MODE" -eq 1 ]]; then
+    RUSTFLAGS="-D warnings" cargo test --workspace
+  else
+    RUSTFLAGS="-D warnings" cargo test --workspace --features network-tests
+  fi
 fi
 
 if [[ "$ALLOW_TEMP_CHECKS" -eq 1 ]]; then
@@ -80,7 +120,11 @@ if [[ "$SANDBOX_MODE" -eq 1 && "$ALLOW_TEMP_CHECKS" -eq 0 ]]; then
   echo "==> Sandbox skip report"
   echo "SKIP: VS Code E2E/loopback gates (depends on local TCP loopback availability)."
   echo "SKIP: Temp-dir constrained scenarios (depends on writable system temp directories)."
-  echo "Result: ci-sandbox completed successfully."
+  if [[ "$STRICT_MODE" -eq 1 ]]; then
+    echo "Result: ci-strict (sandbox) completed successfully."
+  else
+    echo "Result: ci-sandbox completed successfully."
+  fi
   exit 0
 fi
 

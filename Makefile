@@ -12,9 +12,10 @@
 #   test-rust   Run Rust backend tests
 #   test-rust-network Run only loopback network-dependent Rust tests
 #   test-vscode Run VS Code extension tests
+#   ci-strict   Strict CI gate mirroring GitHub Actions ordering and strictness
 #   ci-local    Run all practical gates developers must satisfy before pushing
 
-.PHONY: all build fmt lint lint-strict hooks-install hooks-check test-rust test-rust-sandbox test-rust-network test-vscode ci-local clean regen-man check-man test-man-tmpdir
+.PHONY: all build fmt lint lint-strict hooks-install hooks-check test-rust test-rust-sandbox test-rust-network test-vscode ci-strict ci-local ci-sandbox clean regen-man check-man test-man-tmpdir
 
 all: build
 
@@ -72,6 +73,10 @@ check-man:
 # Test portability of man page generation across different temp directory configurations.
 test-man-tmpdir:
 	@bash scripts/test_manpage_tmpdir.sh
+
+# Strict CI gate mirroring GitHub Actions ordering and strictness
+ci-strict:
+	@bash run_local_ci.sh --strict
 
 # The single local entrypoint for developers
 ci-local: fmt lint test-rust test-vscode check-man
