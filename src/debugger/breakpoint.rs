@@ -958,4 +958,48 @@ mod tests {
             .unwrap();
         assert_eq!(manager.get("transfer").unwrap().hit_count, 3);
     }
+
+    #[test]
+    fn test_log_point_does_not_pause() {
+        let mut manager = BreakpointManager::new();
+        let mut evaluator = MockEvaluator::new();
+        evaluator.set("balance", 1500);
+
+        let bp = Breakpoint::log_point(
+            "transfer".to_string(),
+            "Transfer executed".to_string(),
+        );
+        manager.set(bp);
+
+        let (should_break, log) = manager
+            .should_break_with_context("transfer", &evaluator)
+            .unwrap();
+
+        assert!(!should_break, "Log points should not pause execution");
+        assert_eq!(log, Some("Transfer executed".to_string()));
+    }
+
+    #[test]
+    fn test_log_point_with_interpolation() {
+        let mut manager = BreakpointManager::new();
+        let mut evaluator = MockEvaluator::new();
+        evaluator.set("amount", 100);
+        evaluator.set("balance", 1500);
+
+        let bp = Breakpoint::log_point(
+            "transfer".to_string(),
+            "Transfer {amount} from balance {balance}".to_string(),
+        );
+        manager.set(bp);
+
+        let (should_break, log) = manager
+            .should_break_with_context("transfer", &evaluator)
+            .unwrap();
+
+        assert!(!should_break, "Log points should not pause execution");
+        assert_eq!(
+            log,
+            Some("Transfer 100 from balance 1500".to_string())
+        );
+    }
 }

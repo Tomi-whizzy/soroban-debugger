@@ -79,6 +79,11 @@ pub fn log_breakpoint(function: &str) {
     tracing::info!(function, "Breakpoint hit");
 }
 
+/// Log a log point message (non-pausing breakpoint).
+pub fn log_breakpoint_log(function: &str, message: &str) {
+    tracing::info!(function, message, "Log point hit");
+}
+
 /// Log storage access.
 pub fn log_storage_access(key_count: usize) {
     tracing::debug!(keys = key_count, "Storage accessed");

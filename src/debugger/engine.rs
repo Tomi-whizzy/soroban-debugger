@@ -1,3 +1,4 @@
+use crate::debugger::breakpoint::{BreakpointManager, BreakpointSpec};
 use crate::debugger::breakpoint::{BreakpointManager, ConditionEvaluator};
 use crate::debugger::instruction_pointer::StepMode;
 use crate::debugger::source_map::{SourceLocation, SourceMap};
@@ -131,12 +132,25 @@ impl DebuggerEngine {
     }
     /// Create a new debugger engine.
     #[tracing::instrument(skip_all)]
-    pub fn new(executor: ContractExecutor, initial_breakpoints: Vec<String>) -> Self {
+    pub fn new(
+        executor: ContractExecutor,
+        initial_breakpoints: Vec<String>,
+        initial_log_points: Vec<BreakpointSpec>,
+    ) -> Self {
         let mut breakpoints = BreakpointManager::new();
 
         for bp in initial_breakpoints {
             breakpoints.add_simple(&bp);
             info!("Breakpoint set at function: {}", bp);
+        }
+
+        for lp in initial_log_points {
+            breakpoints.add_spec(lp.clone());
+            info!(
+                "Log point set at function: {} with message: {}",
+                lp.function,
+                lp.log_message.as_deref().unwrap_or("")
+            );
         }
 
         Self {
@@ -278,6 +292,25 @@ impl DebuggerEngine {
         );
 
         if check_breakpoints {
+            let evaluator = self.create_condition_evaluator();
+            match self.breakpoints.should_break_with_context(function, &evaluator) {
+                Ok((should_pause, log_message)) => {
+                    if let Some(msg) = log_message {
+                        // Log point hit - output message but don't pause
+                        crate::logging::log_breakpoint_log(function, &msg);
+                        println!("[LOG @{}] {}", function, msg);
+                    }
+                    if should_pause {
+                        let condition = self
+                            .breakpoints
+                            .get_breakpoint(function)
+                            .and_then(|bp| bp.condition.clone());
+                        self.pause_at_function(function, condition);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Breakpoint evaluation failed: {}", e);
+                }
             let storage = self.executor.get_storage_snapshot().unwrap_or_default();
             let evaluator = EngineConditionEvaluator::new(storage);
             let (should_pause, log_output) = self
@@ -722,6 +755,51 @@ impl DebuggerEngine {
             state.increment_step();
         }
         Ok(())
+    }
+
+    /// Create a condition evaluator for breakpoint evaluation
+    fn create_condition_evaluator(&self) -> Box<dyn crate::debugger::breakpoint::ConditionEvaluator> {
+        Box::new(DebugStateEvaluator {
+            state: Arc::clone(&self.state),
+        })
+    }
+}
+
+/// Evaluates breakpoint conditions by reading from debug state
+struct DebugStateEvaluator {
+    state: Arc<Mutex<DebugState>>,
+}
+
+impl crate::debugger::breakpoint::ConditionEvaluator for DebugStateEvaluator {
+    fn evaluate(&self, condition: &str) -> crate::Result<bool> {
+        // Simple evaluation - can be enhanced later with full expression parsing
+        // For now, return true to not block execution
+        tracing::debug!("Evaluating condition: {}", condition);
+        Ok(true)
+    }
+
+    fn interpolate_log(&self, template: &str) -> crate::Result<String> {
+        // Extract function name and args from state and interpolate
+        if let Ok(state) = self.state.lock() {
+            let mut result = template.to_string();
+
+            // Interpolate {function} placeholder
+            if let Some(func) = state.current_function() {
+                result = result.replace("{function}", func);
+            }
+
+            // Interpolate {args} placeholder
+            if let Some(args) = state.current_args() {
+                result = result.replace("{args}", args);
+            }
+
+            // Interpolate {step_count} placeholder
+            result = result.replace("{step_count}", &state.step_count().to_string());
+
+            Ok(result)
+        } else {
+            Ok(template.to_string())
+        }
     }
 }
 
