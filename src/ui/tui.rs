@@ -32,6 +32,7 @@ impl Default for StorageDisplayOptions {
 /// Terminal user interface for interactive debugging.
 pub struct DebuggerUI {
     engine: DebuggerEngine,
+    config: crate::config::Config,
     pending_execution: Option<PendingExecution>,
     last_output: Option<String>,
     last_error: Option<String>,
@@ -41,6 +42,7 @@ impl DebuggerUI {
     pub fn new(engine: DebuggerEngine) -> Result<Self> {
         Ok(Self {
             engine,
+            config: crate::config::Config::load_or_default(),
             pending_execution: None,
             last_output: None,
             last_error: None,
@@ -106,14 +108,17 @@ impl DebuggerUI {
             return Ok(false);
         }
 
-        match parts[0] {
-            "s" | "step" => {
+        let cmd = parts[0];
+        let kb = &self.config.keybindings;
+
+        match cmd {
+            c if c == kb.step || c == "step" => {
                 self.engine.step()?;
                 if let Ok(state) = self.engine.state().lock() {
                     crate::logging::log_step(state.step_count() as u64);
                 }
             }
-            "c" | "continue" => {
+            c if c == kb.continue_exec || c == "continue" => {
                 if let Some(pending) = self.pending_execution.take() {
                     match self
                         .engine
@@ -141,7 +146,7 @@ impl DebuggerUI {
                     tracing::info!("Execution continuing");
                 }
             }
-            "i" | "inspect" => {
+            c if c == kb.inspect || c == "inspect" => {
                 self.inspect();
             }
             "run" => {
@@ -228,11 +233,11 @@ impl DebuggerUI {
                 }
             }
             "help" => self.print_help(),
-            "q" | "quit" | "exit" => {
+            c if c == kb.quit || c == "quit" || c == "exit" => {
                 tracing::info!("Exiting debugger");
                 return Ok(true);
             }
-            _ => tracing::warn!(command = parts[0], "Unknown command"),
+            _ => tracing::warn!(command = cmd, "Unknown command"),
         }
 
         Ok(false)
@@ -383,20 +388,22 @@ impl DebuggerUI {
     }
 
     fn print_help(&self) {
+        let kb = &self.config.keybindings;
+        
         crate::logging::log_display(
             "Interactive debugger commands:",
             crate::logging::LogLevel::Info,
         );
         crate::logging::log_display(
-            "  step | s           Step execution",
+            format!("  step | {:<11} Step execution", kb.step),
             crate::logging::LogLevel::Info,
         );
         crate::logging::log_display(
-            "  continue | c       Continue execution",
+            format!("  continue | {:<7} Continue execution", kb.continue_exec),
             crate::logging::LogLevel::Info,
         );
         crate::logging::log_display(
-            "  inspect | i        Show current state",
+            format!("  inspect | {:<8} Show current state", kb.inspect),
             crate::logging::LogLevel::Info,
         );
         crate::logging::log_display(
@@ -436,7 +443,7 @@ impl DebuggerUI {
             crate::logging::LogLevel::Info,
         );
         crate::logging::log_display(
-            "  quit | q           Exit debugger",
+            format!("  quit | {:<11} Exit debugger", kb.quit),
             crate::logging::LogLevel::Info,
         );
     }

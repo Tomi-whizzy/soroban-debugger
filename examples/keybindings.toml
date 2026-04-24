@@ -1,0 +1,10 @@
+# Example: .soroban-debug.toml
+#
+# This configuration overrides the default REPL/TUI aliases 
+# to mimic standard GDB / LLDB style commands where possible.
+
+[keybindings]
+step = "n"           # Map 'n' to step (next)
+continue_exec = "r"  # Map 'r' to continue (run)
+inspect = "p"        # Map 'p' to inspect (print)
+quit = "x"           # Map 'x' to quit (exit)
