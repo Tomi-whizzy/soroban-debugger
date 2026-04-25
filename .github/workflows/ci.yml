@@ -1,5 +1,8 @@
 name: CI
 
+# Note: The 'make ci-strict' command in the Makefile mirrors the ordering 
+# and strictness of these jobs for local contributors.
+
 on:
   push:
     branches: [ main, develop, CI/CD ]
